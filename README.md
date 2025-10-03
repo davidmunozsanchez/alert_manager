@@ -6,7 +6,7 @@
 
 El problema se basará en el backend de un proyecto de la asignatura del máster GIDM. El backend se puede consultar aquí: [API ALERTAS](https://github.com/davidmunozsanchez/alertas_api).
 
-La idea tras este código es gestionar de forma eficiente alertas meteorológicas, accientes, es decir, toda comunicación por parte de autoridades que necesite llegar al máximo número de personas posibles.
+La idea tras este código es gestionar de forma eficiente alertas meteorológicas, accientes, es decir, toda comunicación por parte de autoridades que necesite llegar al máximo número de personas posibles y también, crear un registro fiable de numerosas fuentes, aglutinando todo tipo de alertas.
 
 La estructura de este repositorio es la siguiente:
 
@@ -54,7 +54,7 @@ En cuanto a la seguridad, actualmente se usa Firebase para gestionar los inicios
 
 Todo esto está pensado para ser usado a través de contenedores Docker. Lo descrito en este último apartado, está sujeto a cambios, aunque se pretendía explicar el problema desde una perspectiva más práctica y aprovechando la infraestructura ya hecha. Si algún cambio fuera introducido en el futuro, se corregiría debidamente los README relacionados.
 
-
+# 
 De momento no hay ningun MVP y lo que si podemos hacer es historias minimas de usuario para futuro y agruparlos en MVPS para la correcta definición del problema.
 
 Implementar varios roles.
