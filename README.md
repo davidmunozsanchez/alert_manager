@@ -34,3 +34,33 @@ La estructura de este repositorio es la siguiente:
 
 
 ### Definición del problema
+
+Como ya se ha comentado anteriormente, el problema a tratar se inspirará en este, pero desde el principio, se buscará una mejora en el backend para poder dotar de mucha más funcionalidad a una posible APP en el futuro, así como aprovechar las numerosas ventajas del Cloud Computing.
+
+Por una parte, hay que gestionar la obtención e ingesta de alertas en nuestra base de datos. Para esto, se crearán DAGs Airflow encargados de hacer web scrapping en ciertas fuentes, consultar periódicamente APIs públicas de alertas. Con esto, se irá actualizando una base de datos.
+
+Airflow también se encargará de adaptar todos los datos a alertas que se puedan introducir en la base de datos relacional. Al tratarse de datos con los cuales se consultarán relaciones complejas (por ejemplo alertas inactivas o activas, alertas de cierta comunidad), tiene sentido usar una base de datos relacional. Además, se pretende una refactorización del código existente para aprovechar PostGIS, Postgres con consultas optimizadas para datos geoespaciales.
+
+Por último, se creará una API Rest para la administración y gestión de alertas por parte de varios usuarios, los cuales serán:
+- Admin
+- Técnico
+- Usuario
+
+Técnico corresponderá con más categorías de profesionales, con diferentes funciones cada uno, según el tipo de alertas que tengan permitido gestionar.
+
+Para ello, se hará uso de FastAPI. Tener una API permitirá poder hacer uso de esta en la APP Android que se estaba desarrollando o incluso una aplicación web.
+
+En cuanto a la seguridad, actualmente se usa Firebase para gestionar los inicios de sesión y los login. Esto permanecerá sin cambios.
+
+Todo esto está pensado para ser usado a través de contenedores Docker. Lo descrito en este último apartado, está sujeto a cambios, aunque se pretendía explicar el problema desde una perspectiva más práctica y aprovechando la infraestructura ya hecha. Si algún cambio fuera introducido en el futuro, se corregiría debidamente los README relacionados.
+
+
+De momento no hay ningun MVP y lo que si podemos hacer es historias minimas de usuario para futuro y agruparlos en MVPS para la correcta definición del problema.
+
+Implementar varios roles.
+
+Implementar webscrapping
+
+Implementar endpoints principales.
+
+Y alo mejor los dos ultimos son para el MVP de API funcional o algo así.
