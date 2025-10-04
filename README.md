@@ -64,3 +64,5 @@ Implementar webscrapping
 Implementar endpoints principales.
 
 Y alo mejor los dos ultimos son para el MVP de API funcional o algo así.
+
+dejar hitos y decir que se cambiaran por MVP pero crear alguns issues, susceptibles de ser editadas
