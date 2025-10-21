@@ -2,6 +2,26 @@
 
 ## HITO 1: CREACIÓN DEL REPOSITORIO Y DEFINICIÓN DEL PROBLEMA
 
+### Algunos aspectos previos de GitHub
+
+#### Doble factor de autenticación
+
+Para mejorar la seguridad, se ha activado el doble factor de autenticación haciendo uso de Google Authenticator. 
+
+Para su configuración, basta con activarlo en el apartado Settings de GitHub.
+
+![Doble factor](./imgs/doble_factor1.png)
+
+Tras empezar el proceso, deberemos enlazar Google Authenticator con un QR y guardar las claves de recuperación en un lugar seguro.
+
+#### Información completa del perfil
+
+Se ha completado todo lo que se pedía en cuanto al perfil:
+
+![Profile updated](./imgs/profile_update1.png)
+
+Además de añadir una imagen como avatar.
+
 ### Origen del problema
 
 El problema se basará en el backend de un proyecto de la asignatura del máster GIDM.  
@@ -66,3 +86,5 @@ Este sistema permanecerá sin cambios.
 Todo esto está pensado para ejecutarse a través de **contenedores Docker**.  
 Lo descrito en este último apartado está sujeto a cambios, aunque el objetivo de esta sección es explicar el problema desde una perspectiva práctica, aprovechando la infraestructura ya creada.  
 Si se introdujera algún cambio en el futuro, se corregirían debidamente los archivos **README** relacionados.
+
+
