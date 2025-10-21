@@ -14,6 +14,14 @@ Para su configuración, basta con activarlo en el apartado Settings de GitHub.
 
 Tras empezar el proceso, deberemos enlazar Google Authenticator con un QR y guardar las claves de recuperación en un lugar seguro.
 
+#### Información completa del perfil
+
+Se ha completado todo lo que se pedía en cuanto al perfil:
+
+![Profile updated](./imgs/profile_update1.png)
+
+Además de añadir una imagen como avatar.
+
 ### Origen del problema
 
 El problema se basará en el backend de un proyecto de la asignatura del máster GIDM.  
