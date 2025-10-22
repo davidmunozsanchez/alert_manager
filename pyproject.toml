@@ -2,7 +2,7 @@
 name = "poetry_demo"
 version = "0.1.0"
 description = "Alert Management System"
-authors = [{name = "David Muñoz Sánchez", email = "dmunozs14@correo.ugr.es"}]
+authors = ["dmunozs14@correo.ugr.es"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
