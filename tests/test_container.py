@@ -9,8 +9,8 @@ DB_URL = 'postgresql://postgres:postgres@localhost:5432/alerts'
 AIRFLOW_URL = 'http://localhost:8080/health'
 WEB_URL = 'http://localhost:8000'
 
-MAX_RETRIES = 15  # Máximo de intentos para esperar a los servicios (ajustar si es necesario)
-RETRY_DELAY = 5   # Retraso en segundos entre reintentos
+MAX_RETRIES = 30  # Aumentado de 15 a 30 (Permite 30 * 5s = 150 segundos de espera total)
+RETRY_DELAY = 5   # Mantener el retraso en 5 segundos
 
 # --- Funciones de Utilidad (para reintentos) ---
 
