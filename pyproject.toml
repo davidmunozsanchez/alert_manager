@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "poetry_demo"
+name = "alert_manager"
 version = "0.1.0"
 description = "Alert Management System"
 authors = ["dmunozs14@correo.ugr.es"]
