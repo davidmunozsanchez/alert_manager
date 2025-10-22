@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Alert Management System"
 authors = ["dmunozs14@correo.ugr.es"]
 readme = "README.md"
+packages = [{include = "src"}]
 
 [tool.poetry.dependencies]
 python = "^3.11"
