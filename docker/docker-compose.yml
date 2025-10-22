@@ -13,7 +13,9 @@ services:
       - "5432:5432"
 
   web:
-    build: .
+    build:
+      context: ..            # <-- Esto establece la RAIZ del proyecto como contexto de construcción.
+      dockerfile: ./Dockerfile
     depends_on:
       - db
     ports:
