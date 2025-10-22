@@ -34,7 +34,7 @@ jobs:
         # Usamos -f para especificar la ruta al docker-compose.yml
         # Usamos -d para ejecutar en segundo plano (detached)
         # Usamos --build para reconstruir la imagen 'web' si es necesario
-        run: docker-compose -f docker/docker-compose.yml up -d --build
+        run: docker compose -f docker/docker-compose.yml up -d --build
         
       - name: Run Integration Tests
         # Los tests (como test_integration.py) ahora pueden usar 'localhost' para esperar y probar los servicios.
