@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "alert-manager"
+version = "0.1.0"
+description = "Alert Management System"
+authors = ["David Muñoz Sánchez"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.2"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
