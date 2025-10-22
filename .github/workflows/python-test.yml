@@ -24,12 +24,21 @@ jobs:
         run: |
           poetry install
 
-      - name: Start Docker services
+      - name: Run unit tests
         run: |
-          docker-compose -f docker/docker-compose.yml up -d
-          # Wait for services to be ready
-          sleep 30
+          poetry run pytest -v -m "not docker"
 
-      - name: Run all tests
+      - name: Run docker tests
         run: |
-          poetry run pytest -v
+          poetry run pytest -v -m docker
+
+      - name: Show Docker logs
+        if: always()
+        run: |
+          docker ps
+          docker-compose -f docker/docker-compose.yml logs
+
+      - name: Cleanup Docker
+        if: always()
+        run: |
+          docker-compose -f docker/docker-compose.yml down
