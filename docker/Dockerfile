@@ -9,6 +9,6 @@ COPY ../src ./src
 
  
 COPY ../src/start.sh ./src
-RUN chmod +x /src/start.sh
+RUN chmod +x ./src/start.sh
 
-CMD ["/src/start.sh"]
+CMD ["./src/start.sh"]
