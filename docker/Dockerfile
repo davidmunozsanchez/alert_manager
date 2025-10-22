@@ -5,10 +5,10 @@ WORKDIR /src
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY ./scr ./scr
+COPY ./src ./src
 
  
-# COPY start.sh /scr/start.sh
-# RUN chmod +x /scr/start.sh
+COPY start.sh /src/start.sh
+RUN chmod +x /src/start.sh
 
-# CMD ["/app/start.sh"]
+CMD ["/src/start.sh"]

@@ -13,7 +13,7 @@ def docker_compose_file(request):
     # return os.path.join(os.path.dirname(__file__), '..', 'docker-compose.yml') 
     
     # Si está en la carpeta raíz del proyecto
-    return os.path.join(os.path.dirname(__file__), '..', 'docker-compose.yml')
+    return os.path.join(os.path.dirname(__file__), '..', './docker/docker-compose.yml')
 
 
 @pytest.fixture(scope="session")
