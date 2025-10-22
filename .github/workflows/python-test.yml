@@ -16,7 +16,7 @@ jobs:
 
       - name: Instalar Docker Compose
         # Esta action garantiza que Docker y Docker Compose están instalados y listos.
-        uses: docker/setup-docker@v4
+        uses: docker/setup-compose-action@v1
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v4
