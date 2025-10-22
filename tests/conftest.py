@@ -5,11 +5,16 @@ from pytest_docker.plugin import get_docker_services
 def docker_compose_file(pytestconfig):
     return str(pytestconfig.rootdir / "docker/docker-compose.yml")
 
+# After (Corrected):
 @pytest.fixture(scope="session")
-def docker_services(docker_compose_file):
+def docker_services(
+    docker_compose_file, 
+    docker_compose_project_name, # ADDED
+    docker_setup,              # ADDED
+    docker_cleanup             # ADDED
+):
     """Start all services from docker-compose."""
-    return get_docker_services(docker_compose_file)
-
+    pass # Let the plugin handle the startup
 @pytest.fixture(scope="session")
 def postgres_service(docker_services):
     """Ensure that Postgres service is up and responsive."""
