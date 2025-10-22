@@ -39,16 +39,14 @@ jobs:
       - name: Run Integration Tests
         # Los tests (como test_integration.py) ahora pueden usar 'localhost' para esperar y probar los servicios.
         run: |
-          poetry run pytest -v tests/test_integration.py
+          poetry run pytest -v tests/test_container.py
           
       - name: Show Docker logs
         if: always()
         run: |
           echo "--- Docker PS Status ---"
           docker ps
-          echo "--- Docker Compose Logs ---"
-          # Mostrar logs detallados si algo falló
-          docker-compose -f docker/docker-compose.yml logs
+          
           
       - name: Cleanup Docker
         if: always()
