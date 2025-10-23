@@ -68,7 +68,7 @@ on:
     branches: [ "main", "hito2" ]
 
 jobs:
-  test:
+  test_docker_integration:
     runs-on: ubuntu-latest
 
     steps:
@@ -108,3 +108,23 @@ jobs:
         if: always()
         run: docker compose -f docker/docker-compose.yml down -v --remove-orphans
 
+  test_dags:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout del Código
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+
+      - name: Install dependencies (incluyendo tests)
+        run: poetry install
+
+      - name: Run DAG Tests
+        run: poetry run pytest -v tests/test_dags.py
