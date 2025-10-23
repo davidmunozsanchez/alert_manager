@@ -10,8 +10,24 @@ def test_01_wait_for_database(wait_for, db_dsn):
             return conn.execute(text("SELECT 1")).scalar() == 1
     wait_for(is_db_ready)
 
+# def test_02_airflow_webserver_health(wait_for, airflow_url):
+#     def is_airflow_ready():
+#         r = requests.get(airflow_url, timeout=10)
+#         return r.status_code == 200
+#     wait_for(is_airflow_ready)
+
 def test_02_airflow_webserver_health(wait_for, airflow_url):
     def is_airflow_ready():
-        r = requests.get(airflow_url, timeout=10)
-        return r.status_code == 200
+        try:
+            print(f"\nChecking Airflow health at {airflow_url}...")
+            r = requests.get(airflow_url, timeout=10)
+            print(f"Status code: {r.status_code}")
+            if r.status_code == 200:
+                print("✓ Airflow is healthy!")
+                return True
+            return False
+        except requests.exceptions.RequestException as e:
+            print(f"✗ Airflow not ready yet: {type(e).__name__}")
+            return False
+    
     wait_for(is_airflow_ready)

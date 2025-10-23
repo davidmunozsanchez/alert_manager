@@ -1,4 +1,20 @@
 version: "3.9"
+
+x-airflow-common: &airflow-common
+  image: apache/airflow:2.9.1
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
+    AIRFLOW__CORE__FERNET_KEY: ''
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'false'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__WEBSERVER__SECRET_KEY: 'mysecret'
+    _PIP_ADDITIONAL_REQUIREMENTS: ''
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./logs:/opt/airflow/logs
+  user: "${AIRFLOW_UID:-50000}:0"
+
 services:
   db:
     image: postgres:15
@@ -11,19 +27,11 @@ services:
       - pgdata:/var/lib/postgresql/data
     ports:
       - "5432:5432"
-
-  web:
-    build:
-      context: ..            # <-- Esto establece la RAIZ del proyecto como contexto de construcción.
-      dockerfile: ./docker/Dockerfile
-    depends_on:
-      - db
-    ports:
-      - "8000:8000"
-    environment:
-      DATABASE_URL: postgresql://postgres:postgres@db:5432/alerts
-    volumes:
-      - .:/app
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   airflow-db:
     image: postgres:15
@@ -33,38 +41,75 @@ services:
       POSTGRES_DB: airflow
     volumes:
       - airflow_pgdata:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  airflow-init:
+    <<: *airflow-common
+    depends_on:
+      airflow-db:
+        condition: service_healthy
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_MIGRATE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: 'admin'
+      _AIRFLOW_WWW_USER_PASSWORD: 'admin'
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        echo "Waiting for database to be ready..."
+        sleep 5
+        
+        echo "Initializing Airflow database..."
+        airflow db init
+        
+        echo "Running database migrations..."
+        airflow db migrate
+        
+        echo "Creating admin user..."
+        airflow users create \
+          --username admin \
+          --firstname Admin \
+          --lastname User \
+          --role Admin \
+          --email admin@example.com \
+          --password admin 2>&1 | grep -v "already exists" || true
+        
+        echo "✅ Airflow initialization completed!"
 
   airflow-webserver:
-    image: apache/airflow:2.9.1
+    <<: *airflow-common
     depends_on:
-      - airflow-db
-    environment:
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
-      AIRFLOW__CORE__FERNET_KEY: ''
-      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'false'
-      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
-      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: 'true'
-      AIRFLOW__WEBSERVER__SECRET_KEY: 'mysecret'
-      _PIP_ADDITIONAL_REQUIREMENTS: "psycopg2-binary sqlalchemy"
-    volumes:
-      - ./dags:/opt/airflow/dags
+      airflow-init:
+        condition: service_completed_successfully
+      airflow-db:
+        condition: service_healthy
     ports:
       - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "[ -f /opt/airflow/airflow-webserver.pid ]"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: always
     command: webserver
 
   airflow-scheduler:
-    image: apache/airflow:2.9.1
+    <<: *airflow-common
     depends_on:
-      - airflow-db
-      - airflow-webserver
-    environment:
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
-      _PIP_ADDITIONAL_REQUIREMENTS: "psycopg2-binary sqlalchemy"
-      AIRFLOW__WEBSERVER__SECRET_KEY: 'mysecret'
-    volumes:
-      - ./dags:/opt/airflow/dags
+      airflow-init:
+        condition: service_completed_successfully
+      airflow-db:
+        condition: service_healthy
+    restart: always
     command: scheduler
 
 volumes:
