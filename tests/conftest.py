@@ -5,19 +5,30 @@ import pytest
 @pytest.fixture(scope="session")
 def docker_compose_command():
     # Forzar el uso de "docker compose" (v2) en GitHub Actions
-    return ["docker", "compose"]
+    return "docker compose"
 
 @pytest.fixture(scope="session")
-def docker_compose_files(pytestconfig):
+def docker_compose_file(pytestconfig):
     # Usa el compose del proyecto
-    root = Path(pytestconfig.rootpath)
-    return [str(root / "docker" / "docker-compose.yml")]
+    root = Path(pytestconfig.rootdir)
+    return str(root / "docker" / "docker-compose.yml")
+
+
 
 @pytest.fixture(scope="session")
 def wait_for(docker_services):
     # Helper para esperar con backoff
     def _wait(check, timeout=180.0, pause=3.0):
-        docker_services.wait_until_responsive(timeout=timeout, pause=pause, check=check)
+        def check_with_exception_handling():
+            try:
+                return check()
+            except Exception:
+                return False
+        docker_services.wait_until_responsive(
+            timeout=timeout, 
+            pause=pause, 
+            check=check_with_exception_handling
+        )
     return _wait
 
 @pytest.fixture(scope="session")

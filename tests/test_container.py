@@ -12,6 +12,6 @@ def test_01_wait_for_database(wait_for, db_dsn):
 
 def test_02_airflow_webserver_health(wait_for, airflow_url):
     def is_airflow_ready():
-        r = requests.get(airflow_url, timeout=5)
+        r = requests.get(airflow_url, timeout=10)
         return r.status_code == 200
     wait_for(is_airflow_ready)
