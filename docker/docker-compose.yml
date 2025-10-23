@@ -46,7 +46,7 @@ services:
       AIRFLOW__CORE__FERNET_KEY: ''
     user: "0:0"
     volumes:
-      - ./dags:/opt/airflow/dags
+      - ../src/dags:/opt/airflow/dags
       - ./logs:/opt/airflow/logs
     entrypoint: /bin/bash
     command:
@@ -72,7 +72,7 @@ services:
       AIRFLOW__WEBSERVER__WORKERS: '1'
       AIRFLOW__WEBSERVER__WORKER_REFRESH_INTERVAL: '0'
     volumes:
-      - ./dags:/opt/airflow/dags
+      - ../src/dags:/opt/airflow/dags
       - ./logs:/opt/airflow/logs
     ports:
       - "8080:8080"
@@ -96,7 +96,7 @@ services:
       AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
       AIRFLOW__CORE__FERNET_KEY: ''
     volumes:
-      - ./dags:/opt/airflow/dags
+      - ../src/dags:/opt/airflow/dags
       - ./logs:/opt/airflow/logs
     command: scheduler
     restart: on-failure
