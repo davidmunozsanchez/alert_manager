@@ -4,8 +4,11 @@ import pytest
 
 @pytest.fixture(scope="session")
 def docker_compose_command():
+
+    if os.getenv("GITHUB_ACTIONS") or os.getenv("CI"):
+        return "docker compose"
     # Forzar el uso de "docker compose" (v2) en GitHub Actions
-    return "docker compose"
+    return "docker-compose"
 
 @pytest.fixture(scope="session")
 def docker_compose_file(pytestconfig):
