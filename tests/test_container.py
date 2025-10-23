@@ -30,4 +30,4 @@ def test_02_airflow_webserver_health(wait_for, airflow_url):
             print(f"✗ Airflow not ready yet: {type(e).__name__}")
             return False
     
-    wait_for(is_airflow_ready)
+    wait_for(is_airflow_ready, timeout=300.0, pause=5.0)

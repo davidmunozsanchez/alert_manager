@@ -16,9 +16,9 @@ def docker_compose_file(pytestconfig):
 
 
 @pytest.fixture(scope="session")
-def wait_for(docker_services):
+def wait_for(docker_services, timeout=180.0, pause=3.0):
     # Helper para esperar con backoff
-    def _wait(check, timeout=180.0, pause=3.0):
+    def _wait(check, timeout=timeout, pause=pause):
         def check_with_exception_handling():
             try:
                 return check()
