@@ -1,0 +1,24 @@
+[
+  {
+    "title": "Tormenta fuerte",
+    "description": "Tormentas en el área de Madrid",
+    "level": "alta",
+    "type": "meteorológica",
+    "region": "Madrid",
+    "status": "activo",
+    "expires_at": "2025-06-01T18:00:00",
+    "latitude": 40.4168,
+    "longitude": -3.7038
+  },
+  {
+    "title": "Ola de calor",
+    "description": "Se espera ola de calor en Sevilla",
+    "level": "media",
+    "type": "meteorológica",
+    "region": "Andalucia",
+    "status": "activo",
+    "expires_at": "2025-06-15T12:00:00",
+    "latitude": 37.3826,
+    "longitude": -5.9963
+  }
+]
