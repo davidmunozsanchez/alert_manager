@@ -1,6 +1,14 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends, HTTPException
 from app.routers import alerts
 from fastapi.middleware.cors import CORSMiddleware
+ 
+from sqlalchemy.orm import Session
+from datetime import datetime
+import sys
+
+from .database import get_db
+from .routers import alerts
+
 
 app = FastAPI(
     title="Weather Alerts API",

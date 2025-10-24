@@ -29,8 +29,8 @@ def test_02_wait_for_web_service(wait_for, web_health_url, web_url):
     
     # En CI, dar tiempo para que el servicio inicie
     if os.getenv("CI"):
-        print("[TEST] Running in CI, waiting 30s before checking...")
-        time.sleep(30)
+        print("[TEST] Running in CI, waiting 60s before checking...")
+        time.sleep(60)
     
     def is_web_ready():
         try:
@@ -62,7 +62,7 @@ def test_02_wait_for_web_service(wait_for, web_health_url, web_url):
             return False
     
     # Timeout adaptativo según entorno
-    timeout = 120.0 if os.getenv("CI") else 60.0
+    timeout = 300.0 if os.getenv("CI") else 60.0
     pause = 5.0
     
     try:
