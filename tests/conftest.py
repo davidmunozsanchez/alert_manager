@@ -50,4 +50,4 @@ def web_url(docker_services, docker_ip):
 @pytest.fixture(scope="session")
 def web_health_url(web_url):
     """URL del health check del servicio web"""
-    return f"{web_url}/health"
+    return f"{web_url}/alerts/health"
