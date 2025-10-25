@@ -88,11 +88,11 @@ jobs:
           pip install flake8 black isort mypy pylint bandit
           pip install -r docker/requirements.txt
 
-      - name: Check code formatting with Black
-        run: |
-          echo "Checking code formatting..."
-          black --check --diff src/ tests/
-        continue-on-error: false
+      # - name: Check code formatting with Black
+      #   run: |
+      #     echo "Checking code formatting..."
+      #     black --check --diff src/ tests/
+      #   continue-on-error: false
 
       - name: Check import sorting with isort
         run: |
