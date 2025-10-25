@@ -3,8 +3,10 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+load_secrets*
 
 alertmanager-fcb15-firebase-adminsdk-fbsvc-3f66ef9c9c.json
+.env*
 *.so
 
 # Distribution / packaging
