@@ -1,8 +1,10 @@
-import time
 import os
+import time
+
 import psycopg2
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@db:5432/alerts")
+
 
 def wait_for_postgres(max_retries=10, delay=2):
     for attempt in range(max_retries):

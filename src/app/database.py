@@ -1,5 +1,6 @@
 import os
 import time
+
 import psycopg2
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
@@ -8,6 +9,7 @@ from sqlalchemy.orm import sessionmaker
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@db:5432/alerts")
 
 Base = declarative_base()
+
 
 def wait_for_postgres(max_retries=10, delay=2):
     for attempt in range(max_retries):
@@ -22,12 +24,14 @@ def wait_for_postgres(max_retries=10, delay=2):
             time.sleep(delay)
     raise Exception("No se pudo conectar a PostgreSQL después de varios intentos.")
 
+
 def get_db():
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
+
 
 # Espera activa hasta que PostgreSQL esté listo
 wait_for_postgres()

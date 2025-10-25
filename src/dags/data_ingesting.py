@@ -1,10 +1,12 @@
-from airflow import DAG
-from airflow.operators.python import PythonOperator
-from datetime import datetime
 import json
-import psycopg2
 import os
 import traceback
+from datetime import datetime
+
+import psycopg2
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+
 
 def validate_and_insert():
     try:
@@ -14,10 +16,7 @@ def validate_and_insert():
         if not os.path.exists(json_path):
             raise FileNotFoundError(f"El archivo no existe: {json_path}")
 
-        required_fields = [
-            "title", "description", "level", "type", "region",
-            "status", "expires_at", "latitude", "longitude"
-        ]
+        required_fields = ["title", "description", "level", "type", "region", "status", "expires_at", "latitude", "longitude"]
 
         with open(json_path, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -37,16 +36,11 @@ def validate_and_insert():
         print(f"Validación completada: {len(data)} alertas válidas.")
 
         # Insertar en PostgreSQL
-        conn = psycopg2.connect(
-            dbname="alerts",
-            user="postgres",
-            password="postgres",
-            host="db",
-            port=5432
-        )
+        conn = psycopg2.connect(dbname="alerts", user="postgres", password="postgres", host="db", port=5432)
         cur = conn.cursor()
         for alert in data:
-            cur.execute("""
+            cur.execute(
+                """
                 INSERT INTO alerts (
                     title, description, level, type, region, status,
                     expires_at, timestamp, latitude, longitude
@@ -54,7 +48,9 @@ def validate_and_insert():
                     %(title)s, %(description)s, %(level)s, %(type)s, %(region)s, %(status)s,
                     %(expires_at)s, NOW(), %(latitude)s, %(longitude)s
                 )
-            """, alert)
+            """,
+                alert,
+            )
         conn.commit()
         cur.close()
         conn.close()
@@ -66,14 +62,12 @@ def validate_and_insert():
         traceback.print_exc()
         raise  # Para que Airflow registre el fallo y lo muestre en UI/logs
 
+
 with DAG(
     dag_id="validate_and_insert_alert",
     start_date=datetime(2024, 1, 1),
     schedule_interval=None,
     catchup=False,
-    description="Valida alertas y las inserta en PostgreSQL"
+    description="Valida alertas y las inserta en PostgreSQL",
 ) as dag:
-    task = PythonOperator(
-        task_id="validate_and_insert",
-        python_callable=validate_and_insert
-    )
+    task = PythonOperator(task_id="validate_and_insert", python_callable=validate_and_insert)

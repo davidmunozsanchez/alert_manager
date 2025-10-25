@@ -40,7 +40,7 @@ services:
       PYTHONPATH: /app/src
       LOG_LEVEL: ${LOG_LEVEL:-info}
       DISABLE_AUTH: ${DISABLE_AUTH:-false}
-      
+
     volumes:
       - ../src:/app/src:cached
       - ../tests:/app/tests:cached

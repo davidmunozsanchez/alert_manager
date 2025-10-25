@@ -1,6 +1,7 @@
-from pydantic import BaseModel, EmailStr, Field, validator
 from datetime import datetime
 from enum import Enum
+
+from pydantic import BaseModel, EmailStr, Field, validator
 
 
 # Enum para el nivel de alerta
@@ -17,6 +18,7 @@ class AlertLevel(str, Enum):
     alta = "alta"
     muy_alta = "muy alta"
 
+
 class AlertCreate(BaseModel):
     title: str
     description: str
@@ -27,6 +29,7 @@ class AlertCreate(BaseModel):
     expires_at: datetime
     latitude: float  # Nueva propiedad para la latitud
     longitude: float  # Nueva propiedad para la longitud
+
 
 class Alert(BaseModel):
     id: int

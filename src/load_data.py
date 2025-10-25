@@ -1,7 +1,10 @@
 import json
+
 from sqlalchemy.orm import Session
+
+from app import crud, models, schemas
 from app.database import SessionLocal
-from app import models, schemas, crud
+
 
 def load_alerts():
     db: Session = SessionLocal()
@@ -23,6 +26,7 @@ def load_alerts():
         print(f"Error al cargar alertas: {e}")
     finally:
         db.close()
+
 
 if __name__ == "__main__":
     load_alerts()

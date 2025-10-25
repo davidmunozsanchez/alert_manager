@@ -9,7 +9,7 @@
 # jobs:
 #   test:
 #     runs-on: ubuntu-latest
-    
+
 #     steps:
 #       - name: Checkout del Código
 #         uses: actions/checkout@v3
@@ -35,7 +35,7 @@
 #         # Usamos -d para ejecutar en segundo plano (detached)
 #         # Usamos --build para reconstruir la imagen 'web' si es necesario
 #         run: docker compose -f docker/docker-compose.yml up -d --build
-        
+
 #       - name: Show Docker logs
 #         if: always()
 #         run: |
@@ -49,10 +49,10 @@
 #         # Los tests (como test_integration.py) ahora pueden usar 'localhost' para esperar y probar los servicios.
 #         run: |
 #           poetry run pytest -v tests/test_container.py
-          
-      
-          
-          
+
+
+
+
 #       - name: Cleanup Docker
 #         if: always()
 #         # Detiene y elimina contenedores, redes y volúmenes (-v)
@@ -68,6 +68,63 @@ on:
     branches: [ "main", "hito2" ]
 
 jobs:
+  lint:
+    name: Lint & Code Quality
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install linting dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 black isort mypy pylint bandit
+          pip install -r docker/requirements.txt
+
+      - name: Check code formatting with Black
+        run: |
+          echo "Checking code formatting..."
+          black --check --diff src/ tests/
+        continue-on-error: false
+
+      - name: Check import sorting with isort
+        run: |
+          echo "Checking import order..."
+          isort --check-only --diff src/ tests/
+        continue-on-error: false
+
+      - name: Lint with flake8
+        run: |
+          echo "Running flake8..."
+          flake8 src/ tests/ --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 src/ tests/ --count --max-complexity=10 --max-line-length=127 --statistics
+        continue-on-error: false
+
+      - name: Security check with bandit
+        run: |
+          echo "Running security checks..."
+          bandit -r src/ -ll
+        continue-on-error: true
+
+      - name: Type checking with mypy
+        run: |
+          echo "Running type checks..."
+          mypy src/ --ignore-missing-imports
+        continue-on-error: true
+
+      - name: Lint with pylint
+        run: |
+          echo "Running pylint..."
+          pylint src/ --disable=C0111,C0103,R0903 --max-line-length=127
+        continue-on-error: true
+
   test_docker_integration:
     runs-on: ubuntu-latest
 

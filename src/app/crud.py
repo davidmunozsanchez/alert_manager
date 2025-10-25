@@ -1,7 +1,9 @@
-from sqlalchemy.orm import Session
-from app import models, schemas, auth
 from datetime import datetime
+
 from sqlalchemy import and_
+from sqlalchemy.orm import Session
+
+from app import auth, models, schemas
 
 
 def create_alert(db: Session, alert: schemas.AlertCreate):
@@ -15,12 +17,13 @@ def create_alert(db: Session, alert: schemas.AlertCreate):
         expires_at=alert.expires_at,
         timestamp=datetime.utcnow(),
         latitude=alert.latitude,  # Asignar latitud
-        longitude=alert.longitude  # Asignar longitud
+        longitude=alert.longitude,  # Asignar longitud
     )
     db.add(db_alert)
     db.commit()
     db.refresh(db_alert)
     return db_alert
+
 
 def get_alerts(db: Session, skip: int = 0, limit: int = 10):
     alerts = db.query(models.Alert).offset(skip).limit(limit).all()
@@ -36,14 +39,8 @@ def get_alerts(db: Session, skip: int = 0, limit: int = 10):
     return alerts
 
 
-
 def get_alerts_by_community(
-    db: Session,
-    community_name: str = "",
-    type: str = "",
-    priority: str = "",
-    skip: int = 0,
-    limit: int = 10
+    db: Session, community_name: str = "", type: str = "", priority: str = "", skip: int = 0, limit: int = 10
 ):
     filters = []
     if community_name:
@@ -56,6 +53,7 @@ def get_alerts_by_community(
     if filters:
         query = query.filter(and_(*filters))
     return query.offset(skip).limit(limit).all()
+
 
 def get_inactive_alerts(db: Session, skip: int = 0, limit: int = 10):
     alerts = db.query(models.Alert).filter(models.Alert.status == "inactivo").offset(skip).limit(limit).all()
@@ -70,6 +68,7 @@ def get_inactive_alerts(db: Session, skip: int = 0, limit: int = 10):
         db.commit()
     return alerts
 
+
 def reactivate_alert(db: Session, alert_id: int):
     alert = db.query(models.Alert).filter(models.Alert.id == alert_id).first()
     if alert:
@@ -77,6 +76,7 @@ def reactivate_alert(db: Session, alert_id: int):
         db.commit()
         db.refresh(alert)
     return alert
+
 
 def deactivate_alert(db: Session, alert_id: int):
     alert = db.query(models.Alert).filter(models.Alert.id == alert_id).first()

@@ -1,6 +1,9 @@
-from sqlalchemy import Column, Integer, String, DateTime, Float
-from app.database import Base
 from datetime import datetime, timedelta
+
+from sqlalchemy import Column, DateTime, Float, Integer, String
+
+from app.database import Base
+
 
 class Alert(Base):
     __tablename__ = "alerts"
@@ -15,5 +18,3 @@ class Alert(Base):
     expires_at = Column(DateTime)
     latitude = Column(Float)  # Nueva columna para la latitud
     longitude = Column(Float)  # Nueva columna para la longitud
-
-

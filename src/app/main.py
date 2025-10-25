@@ -1,12 +1,14 @@
-from fastapi import FastAPI, Depends, HTTPException, Request
+import logging
+from datetime import datetime
+
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
-from datetime import datetime
-import logging
 
 from .database import get_db
 from .routers import alerts
+
 # from .auth import initialize_firebase
 
 # Configurar logging
@@ -16,11 +18,7 @@ logger = logging.getLogger(__name__)
 # # Inicializar Firebase
 # initialize_firebase()
 
-app = FastAPI(
-    title="Weather Alerts API",
-    description="Gestión de alertas meteorológicas y otros tipos",
-    version="1.0.0"
-)
+app = FastAPI(title="Weather Alerts API", description="Gestión de alertas meteorológicas y otros tipos", version="1.0.0")
 
 # Configurar CORS
 app.add_middleware(
@@ -32,6 +30,3 @@ app.add_middleware(
 )
 
 app.include_router(alerts.router)
-
-
-

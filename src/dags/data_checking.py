@@ -1,11 +1,13 @@
+import os
+from datetime import datetime
+
 from airflow import DAG
 from airflow.operators.python import ShortCircuitOperator
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
-from datetime import datetime
-import os
 
 WATCHED_FILE = "/opt/airflow/dags/points.json"
 TIME_THRESHOLD_SECONDS = 60  # Cambios en el último minuto
+
 
 def check_file_modified_recently(**kwargs):
     if not os.path.exists(WATCHED_FILE):
@@ -21,6 +23,7 @@ def check_file_modified_recently(**kwargs):
     else:
         print("⏳ Archivo no ha sido modificado recientemente.")
         return False
+
 
 with DAG(
     dag_id="monitor_points_json_change",
