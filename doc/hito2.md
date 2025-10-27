@@ -1576,5 +1576,14 @@ Exitosas (aquí se ilustra una ejecución normal si todo va bien). Para ver las 
 Fallidas:
 
 - DAGS
+Si introducimos un ciclo en data_checking 
+![alt text](./imgs/fallo_DAG_1.png)
+
+Ocurre un comportamiento curioso, pasa el test de cycles pero como Airflow detecta al importar que hay un ciclo, el primer test de importar los DAGS falla.
+![alt text](./imgs/fallo_DAG_2.png) 
+![alt text](./imgs/fallo_DAG_3.png)
+
+En futuras actualizaciones se eliminará el test de ciclos.
+
 - Docker
 - Crud

@@ -46,4 +46,4 @@ with DAG(
         poke_interval=10,
     )
 
-    check_modification >> trigger_ingestion >> check_modification
+    check_modification >> trigger_ingestion
