@@ -1487,3 +1487,76 @@ def test_07_all_services_integration(web_url, db_dsn, airflow_url):
 
 
 Una vez explicados todos los test y justificado en el enfoque seguido, ya podemos responder a las tres preguntas faltantes. La biblioteca de aserciones es PyTest usando un enfoque mayormente TDD, el test runner también es pytest y para correrlo en Actions se usa Poetry, que mantiene una sintaxis muy limpia y buena coordinación entre dependencias.
+
+
+### Lint y formateo de código
+El job de `lint` es el **gate de calidad** del pipeline. Ejecuta múltiples herramientas de análisis estático para detectar problemas antes de que lleguen a producción.
+
+**Características:**
+- Se ejecuta primero, antes que los demás jobs
+- Usa `continue-on-error: true` en todos los checks (no bloquea el pipeline)
+- Genera warnings que se deben corregir en futuros commits
+- Los otros jobs se ejecutan en paralelo independientemente del resultado
+
+---
+
+##### 1. isort - Ordenamiento de Imports
+
+```yaml
+- name: Check import sorting with isort
+  run: |
+    poetry run isort --check-only --diff src/ tests/
+  continue-on-error: true
+```
+
+- Imports ordenados alfabéticamente y agrupados correctamente.
+- Estándar: stdlib → third-party → local.
+- Facilita lectura y detecta imports duplicado.
+
+##### 2. flake8 - Linting de Código
+```yaml
+- name: Lint with flake8
+  run: |
+    poetry run flake8 src/ tests/ --count --select=E9,F63,F7,F82 --show-source --statistics
+    poetry run flake8 src/ tests/ --count --max-complexity=10 --max-line-length=127 --statistics
+  continue-on-error: true
+```
+
+- Detecta bugs potenciales antes de ejecución
+- Identifica código muerto
+- Fuerza modularización (funciones complejas → dividir).
+
+#### 3. bandit - Análisis de seguridad
+```yaml
+- name: Security check with bandit
+  run: |
+    poetry run bandit -r src/ -ll
+  continue-on-error: true
+```
+Vulnerabilidades detectadas:
+- Uso de eval() o exec() (inyección de código)
+- Contraseñas hardcodeadas en el código
+- SQL injection potencial
+- Generación débil de números aleatorios
+
+#### 4. mypy - Análisis de tipos
+```yaml
+- name: Type checking with mypy
+  run: |
+    poetry run mypy src/ --ignore-missing-imports
+  continue-on-error: true
+```
+
+En general, detecta errores de tipos.
+
+#### 5. pylint - Análisis profundo
+```yaml
+- name: Lint with pylint
+  run: |
+    poetry run pylint src/ --disable=C0111,C0103,R0903 --max-line-length=127
+  continue-on-error: true
+```
+- Convenciones de nombres (PEP 8)
+- Estructura de clases y módulos
+- Duplicación de código
+- Diseño orientado a objetos
