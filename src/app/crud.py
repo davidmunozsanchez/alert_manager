@@ -27,15 +27,15 @@ def create_alert(db: Session, alert: schemas.AlertCreate):
 
 def get_alerts(db: Session, skip: int = 0, limit: int = 10):
     alerts = db.query(models.Alert).offset(skip).limit(limit).all()
-    # now = datetime.now()
-    # updated = False
-    # for alert in alerts:
-    #     if alert.status == "activo" and alert.expires_at < now:
-    #         alert.status = "inactivo"
-    #         db.add(alert)
-    #         updated = True
-    # if updated:
-    #     db.commit()
+    now = datetime.now()
+    updated = False
+    for alert in alerts:
+        if alert.status == "activo" and alert.expires_at < now:
+            alert.status = "inactivo"
+            db.add(alert)
+            updated = True
+    if updated:
+        db.commit()
     return alerts
 
 
