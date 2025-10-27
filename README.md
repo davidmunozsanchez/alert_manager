@@ -32,7 +32,7 @@ Puedes seguir el progreso del desarrollo, reportar errores o proponer mejoras de
 - [Issues](https://github.com/davidmunozsanchez/alert_manager/issues): seguimiento de errores y tareas pendientes.
 - [Milestones](https://github.com/davidmunozsanchez/alert_manager/milestones): planificación y avances por etapas.
 
-Añadir lo que se ha hecho.
+Se han tenido en cuenta esta vez dos Milestones. Uno para la configuración inicial y otro para la introducción de tests. Algunas issues no se han cerrado porque o bien no se ha avanzado o bien se quiere añadir más funcionalidad futura.
 
 ---
 

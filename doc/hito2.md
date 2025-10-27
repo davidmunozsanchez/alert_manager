@@ -21,7 +21,7 @@ Sistema completo de descubrimiento, ejecución y reporte de pruebas con un ecosi
 
 
 5. Sistema CI: GitHub Actions
-Plataforma de integración continua nativa de GitHub con pipeline en 5 etapas.
+Plataforma de integración continua nativa de GitHub con pipeline en  4 etapas.
 
 
 A continuación, se irán detallando las etapas siguiendo un orden lógico de construcción, es decir, siguiendo los dos hitos creados para el desarrollo del Hito 2. No obstante, se darán explicaciones de como ha quedado finalmente esa parte, es decir, detallando una especie de finalización del Hito 2, sin cerrar posibles modificaciones en el futuro. Para seguir el orden cornológico que se siguió en la implementación de todos los apartados para configurar y correr CI, se recomienda consultar las issues y los milestones del repositorio.
@@ -85,7 +85,7 @@ En un entorno de producción donde se contara con GitHub Enterprise, sería posi
 - Las reglas de protección avanzadas requieren **GitHub Enterprise**.
 - En repos públicos gratuitos solo están disponibles protecciones básicas
 
-Así quedría el workflow si se consulta en Actions:
+Así quedaría el workflow si se consulta en Actions:
 
 ![alt text](./imgs/actions1.png)
 
