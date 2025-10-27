@@ -1586,10 +1586,64 @@ Ocurre un comportamiento curioso, pasa el test de cycles pero como Airflow detec
 En futuras actualizaciones se eliminará el test de ciclos.
 
 - Docker
+Al romper el servicio en el compose de Web cambiando la URL de la DB no se pasan los siguientes test como cabía esperar:
+![alt text](./imgs/broken_service.png)
 
 - Crud
 Si se rompe a propósito la auto expiración de alertas en get alerts, falla lo siguiente:
 ![alt text](./imgs/fallo_CRUD.png)
 
-![alt text](./imgs/fallo_CRUD1.png)
+![alt text](./imgs/fallo_CRUD_2.png)
 Tal y como se esperaba, el test de auto expiración falla.
+
+
+
+Para finalizar, se contesta a las preguntas de la evaluación:
+
+**Elección y configuración del gestor de tareas.**
+Elección: Poetry
+
+Justificación:
+
+- Gestión moderna de dependencias con resolución automática de conflictos
+- Entornos virtuales automáticos sin configuración manual
+- Archivo único pyproject.toml que centraliza metadatos y configuración
+- Integración nativa con GitHub Actions
+- Separación clara entre dependencias de producción y desarrollo
+  
+**Elección y uso de la biblioteca de aserciones.**
+
+pytest (biblioteca nativa)
+
+Justificación:
+
+- Sintaxis simple: assert condition en lugar de métodos específicos
+- Mensajes de error descriptivos automáticos
+- Integración perfecta con el framework de pruebas
+
+**Elección y uso del marco de pruebas.**
+ Elección: pytest
+
+Justificación:
+
+- Descubrimiento automático de tests (test_*.py)
+- Sistema de fixtures potente con scopes múltiples
+- Plugin pytest-docker para integración con contenedores
+- Parametrización para tests con múltiples casos
+- Configuración centralizada en pyproject.toml
+
+
+**Integración continua funcionando y correcta justificación del sistema elegido.**
+Elección: GitHub Actions
+
+Justificación:
+
+- Integración nativa con GitHub sin configuración externa
+- Entornos limpios Ubuntu para cada job
+Configuración declarativa en YAML
+- Manejo de secrets para credenciales sensibles
+- Triggers automáticos en push y pull request
+  
+**Correcta implementación y ejecución de los tests para testear algunos aspectos de la lógica de negocio de la aplicación a desarrollar.**
+
+En este caso los de la API no se han hecho, pero si los de CRUD, DAGs y los contenedores Docker correctamente levantados. Este último muy probablemente se cambiará en siguientes Milestones.
