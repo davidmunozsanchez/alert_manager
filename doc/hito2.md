@@ -38,36 +38,14 @@ GitHub Actions es la plataforma de CI/CD nativa de GitHub que permite automatiza
 
 El workflow está diseñado con **3 jobs independientes** organizados en una arquitectura de pipeline con paralelización:
 
-```
-┌──────────────────────────┐
-│    JOB 1: LINT           │
-│  Análisis estático       │
-│  • isort                 │
-│  • flake8                │
-│  • bandit                │
-│  • mypy                  │
-│  • pylint                │
-└────────┬─────────────────┘
-         │
-    ┌────┴──────────────────────────┐
-    │    (ejecución paralela)       │
-    │                               │
-┌───▼──────────────────┐  ┌────────▼─────────────┐
-│ JOB 2: DOCKER TESTS  │  │ JOB 3: DAG TESTS     │
-│ • Setup containers   │  │ • Airflow DAGs       │
-│ • API integration    │  │ • Import validation  │
-│ • Database tests     │  │ • Syntax checks      │
-│ • Cleanup            │  │                      │
-└──────────────────────┘  └──────────────────────┘
-```
-
+![alt text](./imgs/actions_diagram.png)
 **Características de diseño:**
 
 
 - `lint` se ejecuta primero como gate de calidad. No obstante, su fallo en alguno de los test no implica que no se corran las siguientes tareas. Simplemente es una prueba de calidad y se irán actualizando sus refactorizaciones sugeridas en futuros commits.
 
 - Además, se pasó **black** en local para autoformatear el código automáticamente, garantizando un estilo consistente según las convenciones PEP 8. Black es un formateador de código Python "sin configuración" que elimina debates sobre estilo al aplicar un formato determinista y legible.
-- `test_docker_integration` y `test_dags` se ejecutan en paralelo tras lint
+- `test_docker_integration`,`test_dags` y `test_crud` se ejecutan en paralelo tras lint
    
 - Cada job tiene su propio entorno Ubuntu limpio y así no hay interferencias entre tests.
 
@@ -473,3 +451,534 @@ def test_dag_documentation(dagbag):
 - No falla, solo recomienda documentación.
 
 ---
+
+#### Tests CRUD (Lógica de Negocio)
+
+##### Tests CRUD con enfoque TDD
+
+Los tests CRUD validan la **lógica de negocio** de las operaciones de base de datos, siguiendo principios de **Test-Driven Development (TDD)**. 
+
+**¿Qué significa CRUD?**
+
+CRUD es el acrónimo de las cuatro operaciones básicas de persistencia de datos:
+
+- **Create**: crear nuevos registros (INSERT)
+- **Read**: leer/consultar datos existentes (SELECT)
+- **Update**: actualizar registros (UPDATE)
+- **Delete**: eliminar registros (DELETE)
+
+En el contexto de Alert Manager, las operaciones CRUD se traducen en:
+
+- **Create**: `create_alert()` - Crear nuevas alertas
+- **Read**: `get_alerts()`, `get_alerts_by_community()` - Consultar alertas con filtros
+- **Update**: `reactivate_alert()`, `deactivate_alert()` - Cambiar estado de alertas
+- **Delete**: No implementado (las alertas se desactivan, no se eliminan)
+
+A diferencia de los tests de DAGs (que validan estructura), estos tests verifican el **comportamiento funcional** del sistema: filtros, paginación, expiración automática, y reglas de negocio.
+
+- Usan **SQLite en memoria**.
+- Validan **reglas de negocio específicas** del dominio de alertas.
+- Son **independientes de la implementación**: n importa cómo esté escrito el código interno.
+- Permiten **refactorización segura**: si los tests pasan, el comportamiento es correcto.
+
+---
+
+##### Fixtures de tests CRUD
+
+###### 1. Fixture: `test_db`
+
+```python
+@pytest.fixture(scope="function")
+def test_db():
+    """Crea una base de datos SQLite en memoria para cada test"""
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(bind=engine)
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    db = TestingSessionLocal()
+    
+    yield db
+    
+    db.close()
+```
+
+**Propósito:** proporciona una base de datos limpia e independiente para cada test.
+
+**Características:**
+- `scope="function"`: se crea una BD **nueva** para cada función de test.
+- **SQLite en memoria**: muy rápido, sin persistencia entre tests.
+- **Aislamiento total**: un test no puede afectar a otro.
+- **Cleanup automático**: `db.close()` se ejecuta después del test.
+
+---
+
+##### 2. Fixture: `sample_alert_data`
+
+```python
+@pytest.fixture
+def sample_alert_data():
+    """Datos de ejemplo para tests"""
+    return {
+        "title": "Tormenta severa",
+        "description": "Fuertes lluvias y vientos",
+        "level": AlertLevel.alta,
+        "type": "meteorológica",
+        "region": "Madrid",
+        "status": "activo",
+        "expires_at": datetime.utcnow() + timedelta(hours=6),
+        "latitude": 40.4168,
+        "longitude": -3.7038
+    }
+```
+
+**Propósito:** proporciona datos de alerta válidos y reutilizables.
+---
+
+##### Tests: Create Alert
+
+###### 1. `test_create_alert_success`
+
+```python
+def test_create_alert_success(test_db, sample_alert_data):
+    """Test: Crear una alerta válida debe retornar la alerta con ID"""
+    alert_create = AlertCreate(**sample_alert_data)
+    result = crud.create_alert(test_db, alert_create)
+    
+    assert result.id is not None
+    assert result.title == sample_alert_data["title"]
+    assert result.status == "activo"
+```
+
+**Regla de negocio validada:**
+- Crear una alerta debe generar un ID único automáticamente
+- Los campos deben persistirse correctamente
+- El status por defecto debe ser "activo"
+- Se debe registrar un timestamp de creación
+
+---
+
+###### 2. `test_create_alert_persists_in_db`
+
+```python
+def test_create_alert_persists_in_db(test_db, sample_alert_data):
+    """Test: Alerta creada debe persistir en la base de datos"""
+    created_alert = crud.create_alert(test_db, AlertCreate(**sample_alert_data))
+    
+    db_alert = test_db.query(Alert).filter(Alert.id == created_alert.id).first()
+    assert db_alert is not None
+```
+
+**Regla de negocio validada:**
+- La alerta no solo se retorna, sino que **persiste en BD**
+- Validación de que `db.commit()` funciona correctamente
+
+---
+
+###### 3. `test_create_alert_with_coordinates`
+
+```python
+def test_create_alert_with_coordinates(test_db, sample_alert_data):
+    """Test: Alerta debe incluir coordenadas geográficas"""
+    result = crud.create_alert(test_db, AlertCreate(**sample_alert_data))
+    
+    assert result.latitude == pytest.approx(40.4168, abs=0.001)
+    assert result.longitude == pytest.approx(-3.7038, abs=0.001)
+```
+
+**Regla de negocio validada:**
+- Las coordenadas geográficas son obligatorias
+- Se almacenan con precisión suficiente (3 decimales ≈ 111 metros)
+
+**Uso de `pytest.approx`:**
+- Maneja errores de precisión de punto flotante
+- `abs=0.001` permite tolerancia de ±0.001 grados
+
+---
+
+##### Tests: Get Alerts
+
+###### 4. `test_get_alerts_empty_database`
+
+```python
+def test_get_alerts_empty_database(test_db):
+    """Test: Consultar alertas en BD vacía debe retornar lista vacía"""
+    result = crud.get_alerts(test_db)
+    assert result == []
+```
+
+**Regla de negocio validada:**
+- Consulta sin resultados retorna `[]`, no `None` ni error.
+
+---
+
+###### 5. `test_get_alerts_returns_all`
+
+```python
+def test_get_alerts_returns_all(test_db, sample_alert_data):
+    """Test: get_alerts debe retornar todas las alertas activas"""
+    for i in range(3):
+        data = sample_alert_data.copy()
+        data["title"] = f"Alerta {i}"
+        crud.create_alert(test_db, AlertCreate(**data))
+    
+    result = crud.get_alerts(test_db)
+    assert len(result) == 3
+```
+
+**Regla de negocio validada:**
+- Sin filtros, retorna **todas** las alertas.
+- Orden implícito (por ID de creación).
+
+---
+
+###### 6. `test_get_alerts_pagination`
+
+```python
+def test_get_alerts_pagination(test_db, sample_alert_data):
+    """Test: Paginación debe limitar resultados correctamente"""
+    # Crear 10 alertas
+    for i in range(10):
+        crud.create_alert(test_db, AlertCreate(**sample_alert_data))
+    
+    page1 = crud.get_alerts(test_db, skip=0, limit=5)
+    page2 = crud.get_alerts(test_db, skip=5, limit=5)
+    
+    assert len(page1) == 5
+    assert len(page2) == 5
+    
+    # Páginas no deben solaparse
+    page1_ids = {a.id for a in page1}
+    page2_ids = {a.id for a in page2}
+    assert page1_ids.isdisjoint(page2_ids)
+```
+
+**Reglas de negocio validadas:**
+- `skip` y `limit` funcionan correctamente.
+- Las páginas no se solapan (no hay duplicados).
+- Paginación es determinista (mismo orden siempre).
+
+---
+
+###### 7. `test_get_alerts_auto_expires`
+
+```python
+def test_get_alerts_auto_expires(test_db, sample_alert_data):
+    """Test: Alertas expiradas deben cambiar automáticamente a 'inactivo'"""
+    data = sample_alert_data.copy()
+    data["expires_at"] = datetime.utcnow() - timedelta(hours=1)  # Ya expirada
+    data["status"] = "activo"
+    
+    created = crud.create_alert(test_db, AlertCreate(**data))
+    assert created.status == "activo"
+    
+    crud.get_alerts(test_db)  # Trigger de actualización
+    
+    test_db.refresh(created)
+    assert created.status == "inactivo"
+```
+
+**Regla de negocio validada:**
+- **Auto-expiración**: alertas con `expires_at` pasado se marcan como inactivas.
+- Actualización automática en consulta (no requiere cron job).
+
+---
+
+##### Tests: Get Alerts by Community
+
+###### 8. `test_get_alerts_by_community_filter_by_region`
+
+```python
+def test_get_alerts_by_community_filter_by_region(test_db, sample_alert_data):
+    """Test: Filtrar por comunidad debe retornar solo alertas de esa región"""
+    madrid_data = sample_alert_data.copy()
+    madrid_data["region"] = "Madrid"
+    
+    barcelona_data = sample_alert_data.copy()
+    barcelona_data["region"] = "Barcelona"
+    
+    crud.create_alert(test_db, AlertCreate(**madrid_data))
+    crud.create_alert(test_db, AlertCreate(**barcelona_data))
+    
+    result = crud.get_alerts_by_community(test_db, community_name="Madrid")
+    
+    assert len(result) == 1
+    assert result[0].region == "Madrid"
+```
+
+**Regla de negocio validada:**
+- Filtro por región funciona correctamente.
+- Solo retorna alertas de la región especificada.
+
+---
+
+###### 9. `test_get_alerts_by_community_filter_by_type`
+
+```python
+def test_get_alerts_by_community_filter_by_type(test_db, sample_alert_data):
+    """Test: Filtrar por tipo debe retornar solo alertas de ese tipo"""
+    weather_data = sample_alert_data.copy()
+    weather_data["type"] = "meteorológica"
+    
+    traffic_data = sample_alert_data.copy()
+    traffic_data["type"] = "tráfico"
+    
+    crud.create_alert(test_db, AlertCreate(**weather_data))
+    crud.create_alert(test_db, AlertCreate(**traffic_data))
+    
+    result = crud.get_alerts_by_community(test_db, type="meteorológica")
+    
+    assert len(result) == 1
+    assert result[0].type == "meteorológica"
+```
+
+**Regla de negocio validada:**
+- Filtro por tipo de alerta funciona
+- Tipos: meteorológica, tráfico, sanitaria, etc.
+
+---
+
+###### 10. `test_get_alerts_by_community_multiple_filters`
+
+```python
+def test_get_alerts_by_community_multiple_filters(test_db, sample_alert_data):
+    """Test: Múltiples filtros deben aplicarse con AND lógico"""
+    # Crear 3 alertas con diferentes combinaciones
+    alert1 = {"region": "Madrid", "type": "meteorológica", "level": "alta"}
+    alert2 = {"region": "Madrid", "type": "tráfico", "level": "alta"}
+    alert3 = {"region": "Barcelona", "type": "meteorológica", "level": "alta"}
+    
+    result = crud.get_alerts_by_community(
+        test_db,
+        community_name="Madrid",
+        type="meteorológica",
+        priority="alta"
+    )
+    
+    assert len(result) == 1  # Solo alert1 cumple TODAS las condiciones
+```
+
+**Regla de negocio validada:**
+- Múltiples filtros usan **AND** lógico (no OR).
+- Filtros: región AND tipo AND prioridad.
+- Solo retorna alertas que cumplen **todos** los criterios.
+
+---
+
+###### 11. `test_get_alerts_by_community_case_insensitive`
+
+```python
+def test_get_alerts_by_community_case_insensitive(test_db, sample_alert_data):
+    """Test: Filtro de región debe ser case-insensitive"""
+    data = sample_alert_data.copy()
+    data["region"] = "Comunidad de Madrid"
+    crud.create_alert(test_db, AlertCreate(**data))
+    
+    result1 = crud.get_alerts_by_community(test_db, community_name="madrid")
+    result2 = crud.get_alerts_by_community(test_db, community_name="MADRID")
+    result3 = crud.get_alerts_by_community(test_db, community_name="Madrid")
+    
+    assert len(result1) == 1
+    assert len(result2) == 1
+    assert len(result3) == 1
+```
+
+**Regla de negocio validada:**
+- Búsqueda **case-insensitive** (no distingue mayúsculas/minúsculas).
+- Mejora UX: usuarios no necesitan escribir exactamente.
+
+---
+
+##### Tests: Get Inactive Alerts
+
+###### 12. `test_get_inactive_alerts_only_returns_inactive`
+
+```python
+def test_get_inactive_alerts_only_returns_inactive(test_db, sample_alert_data):
+    """Test: Debe retornar solo alertas con status='inactivo'"""
+    active_data = sample_alert_data.copy()
+    active_data["status"] = "activo"
+    
+    inactive_data = sample_alert_data.copy()
+    inactive_data["status"] = "inactivo"
+    
+    crud.create_alert(test_db, AlertCreate(**active_data))
+    crud.create_alert(test_db, AlertCreate(**inactive_data))
+    
+    result = crud.get_inactive_alerts(test_db)
+    
+    assert len(result) == 1
+    assert result[0].status == "inactivo"
+```
+
+**Regla de negocio validada:**
+- Filtro por status funciona correctamente.
+- Útil para historial de alertas pasadas.
+
+---
+
+##### Tests: Reactivate Alert
+
+###### 13. `test_reactivate_alert_changes_status`
+
+```python
+def test_reactivate_alert_changes_status(test_db, sample_alert_data):
+    """Test: Reactivar alerta debe cambiar status a 'activo'"""
+    data = sample_alert_data.copy()
+    data["status"] = "inactivo"
+    
+    alert = crud.create_alert(test_db, AlertCreate(**data))
+    assert alert.status == "inactivo"
+    
+    reactivated = crud.reactivate_alert(test_db, alert.id)
+    
+    assert reactivated.status == "activo"
+```
+
+**Regla de negocio validada:**
+- Transición de estado: Inactivo → Activo.
+- Útil si una alerta vuelve a ser relevante.
+
+---
+
+###### 14. `test_reactivate_alert_persists_change`
+
+```python
+def test_reactivate_alert_persists_change(test_db, sample_alert_data):
+    """Test: Reactivación debe persistir en base de datos"""
+    alert = crud.create_alert(test_db, AlertCreate(**sample_alert_data))
+    crud.reactivate_alert(test_db, alert.id)
+    
+    db_alert = test_db.query(Alert).filter(Alert.id == alert.id).first()
+    assert db_alert.status == "activo"
+```
+
+**Regla de negocio validada:**
+- Cambio persiste en BD (no solo en memoria).
+- Validación de `db.commit()`.
+
+---
+
+###### 15. `test_reactivate_nonexistent_alert`
+
+```python
+def test_reactivate_nonexistent_alert(test_db):
+    """Test: Reactivar alerta inexistente debe retornar None"""
+    result = crud.reactivate_alert(test_db, 99999)
+    assert result is None
+```
+
+**Regla de negocio validada:**
+- Manejo de errores: ID inexistente retorna `None`.
+- No debe lanzar excepción.
+
+---
+
+##### Tests: Deactivate Alert
+
+###### 16. `test_deactivate_alert_changes_status`
+
+```python
+def test_deactivate_alert_changes_status(test_db, sample_alert_data):
+    """Test: Desactivar alerta debe cambiar status a 'inactivo'"""
+    alert = crud.create_alert(test_db, AlertCreate(**sample_alert_data))
+    assert alert.status == "activo"
+    
+    deactivated = crud.deactivate_alert(test_db, alert.id)
+    
+    assert deactivated.status == "inactivo"
+```
+
+**Regla de negocio validada:**
+- Transición de estado: Activo → Inactivo.
+- Permite cerrar alertas manualmente.
+
+---
+
+###### 17. `test_deactivate_alert_persists_change`
+
+```python
+def test_deactivate_alert_persists_change(test_db, sample_alert_data):
+    """Test: Desactivación debe persistir en base de datos"""
+    alert = crud.create_alert(test_db, AlertCreate(**sample_alert_data))
+    crud.deactivate_alert(test_db, alert.id)
+    
+    db_alert = test_db.query(Alert).filter(Alert.id == alert.id).first()
+    assert db_alert.status == "inactivo"
+```
+
+**Regla de negocio validada:**
+- Cambio persiste tras recargar desde BD.
+
+---
+
+##### Tests: Edge Cases
+
+###### 18. `test_create_alert_with_very_long_description`
+
+```python
+def test_create_alert_with_very_long_description(test_db, sample_alert_data):
+    """Test: Descripción muy larga debe manejarse correctamente"""
+    data = sample_alert_data.copy()
+    data["description"] = "x" * 10000  # 10k caracteres
+    
+    result = crud.create_alert(test_db, AlertCreate(**data))
+    
+    assert len(result.description) == 10000
+```
+
+**Regla de negocio validada:**
+- Sistema maneja descripciones extensas sin truncar.
+- No hay límite artificial de longitud.
+
+---
+
+###### 19. `test_get_alerts_with_limit_zero`
+
+```python
+def test_get_alerts_with_limit_zero(test_db, sample_alert_data):
+    """Test: limit=0 debe retornar lista vacía"""
+    crud.create_alert(test_db, AlertCreate(**sample_alert_data))
+    
+    result = crud.get_alerts(test_db, limit=0)
+    
+    assert result == []
+```
+
+**Regla de negocio validada:**
+- `limit=0` retorna vacío (no error).
+
+---
+
+##### 20. `test_alerts_ordered_by_creation_time`
+
+```python
+def test_alerts_ordered_by_creation_time(test_db, sample_alert_data):
+    """Test: Alertas deben retornarse en orden de creación (implícito por ID)"""
+    ids = []
+    for i in range(3):
+        data = sample_alert_data.copy()
+        data["title"] = f"Alerta {i}"
+        alert = crud.create_alert(test_db, AlertCreate(**data))
+        ids.append(alert.id)
+    
+    result = crud.get_alerts(test_db)
+    result_ids = [a.id for a in result]
+    
+    assert result_ids == sorted(result_ids)  # IDs en orden ascendente
+```
+
+**Regla de negocio validada:**
+- Orden determinista: más recientes primero (o por ID).
+- Importante para UX: usuarios ven alertas nuevas primero.
+
+---
+
+¿Por qué estos tests son TDD?
+
+1. Antes de refactorizar, estos tests documentan el comportamiento esperado.
+2. Usan SQLite, no requieren infraestructura.
+4. Testean comportamiento: no cómo está hecho, sino qué hace.
+5. Permiten refactorización segura: si pasan, el sistema funciona correctamente.
+
+
+#### Test integración Docker
+
