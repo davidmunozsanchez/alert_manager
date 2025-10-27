@@ -74,6 +74,7 @@ El workflow está diseñado con **3 jobs independientes** organizados en una arq
    
 - Cada job tiene su propio entorno Ubuntu limpio y así no hay interferencias entre tests.
 
+
 ---
 
 #### Triggers del Workflow
@@ -112,3 +113,101 @@ En un entorno de producción donde se contara con GitHub Enterprise, sería posi
 Así quedría el workflow si se consulta en Actions:
 
 ![alt text](./imgs/actions1.png)
+
+
+### Poetry
+
+Poetry es el gestor de dependencias y empaquetado moderno elegido para Alert Manager. Reemplaza el flujo tradicional de `pip + requirements.txt` con un enfoque más robusto y determinista.
+
+#### ¿Por qué Poetry?
+
+**Ventajas principales:**
+- **Gestión de entornos virtuales**: crea y maneja venvs automáticamente
+- **Gestión de grupos**: separación clara entre dependencias de producción y desarrollo. Esto será una mejora en futuras revisiones del código. Ahora mismo, los test se están ejecutando y la CI funcionando.
+
+**Alternativas evaluadas:**
+- **pip + requirements.txt**: estándar tradicional pero sin resolución de dependencias, algo que Poetry sí contempla, recomendando incluso versiones compatibles entre sí.
+
+---
+
+#### Archivo pyproject.toml
+
+El archivo `pyproject.toml` es el corazón de la configuración del proyecto. Define metadatos, dependencias, herramientas de desarrollo y configuración.
+
+**Estructura básica:**
+
+```toml
+[tool.poetry]
+name = "alert_manager"
+version = "0.1.0"
+description = "Alert Management System"
+authors = ["dmunozs14@correo.ugr.es"]
+readme = "README.md"
+packages = [{include = "src"}]
+```
+
+**Metadatos del proyecto:**
+- `name`: identificador único del paquete.
+- `packages`: directorio que contiene el .código fuente.
+- `readme`: archivo de documentación principal.
+
+---
+
+##### Dependencias de producción
+
+```toml
+[tool.poetry.dependencies]
+python = ">=3.11,<3.13"
+```
+
+**¿Por qué no hay más dependencias aquí?**
+En este proyecto, las dependencias de producción están mezcladas con las de desarrollo en `[tool.poetry.group.dev.dependencies]`. En un entorno real, aquí irían solo las dependencias necesarias para ejecutar la aplicación. Se actualizará en futuras versiones.
+
+---
+
+##### Dependencias de desarrollo
+
+```toml
+[tool.poetry.group.dev.dependencies]
+...
+```
+Aquí están todas las dependencias necesarias para correr los tests.
+**Sintaxis de versiones:**
+- `^7.4.2`: Compatible con `>=7.4.2, <8.0.0` (patch/minor updates)
+- `>=1.4.36,<2.0`: Rango específico (evita breaking changes)
+- `2.9.1`: Versión exacta (para compatibilidad crítica como Airflow)
+
+##### Configuración de Pytest
+
+```toml
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+```
+
+- `testpaths`: directorio donde buscar tests
+- `python_files`: patrón de archivos de test
+
+#### Integración con GitHub Actions
+
+Poetry se integra en el workflow mediante la action oficial `snok/install-poetry@v1`:
+
+```yaml
+- name: Install Poetry
+  uses: snok/install-poetry@v1
+
+- name: Install dependencies
+  run: poetry install
+```
+
+**Ejecución de tests:**
+```bash
+# Via Poetry
+poetry run pytest -v
+
+```
+
+Si añadiéramos -s podríamos ver todos los logs de las ejecuciones de los tests.
+
+#### Poetry.lock
+`poetry.lock` es generado automáticamente y contiene las versiones exactas de todas las dependencias. En este caso, no se ha tenido en cuenta ya que cada test inicia un entorno independiente Ubuntu e instala las dependencias desde 0.
