@@ -25,6 +25,8 @@ python-jose = {extras = ["cryptography"], version = "^3.3.0"}
 passlib = {extras = ["bcrypt"], version = "^1.7.4"}
 python-multipart = "^0.0.6"
 alembic = "^1.13.0"
+pytest-cov = "^4.1.0"
+coverage = {extras = ["toml"], version = "^7.3.0"}
 
 # Linting & Formatting
 black = "^24.4.2"
