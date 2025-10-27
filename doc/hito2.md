@@ -1560,3 +1560,9 @@ En general, detecta errores de tipos.
 - Estructura de clases y módulos
 - Duplicación de código
 - Diseño orientado a objetos
+
+
+#### Ejemplos de test
+
+A continuación, se propondrán un test exitoso y otro fallido por cada tipo de test, para ilustrar mejor el comportamiento.
+
