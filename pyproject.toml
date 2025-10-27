@@ -1,0 +1,48 @@
+[tool.poetry]
+name = "alert_manager"
+version = "0.1.0"
+description = "Alert Management System"
+authors = ["dmunozs14@correo.ugr.es"]
+readme = "README.md"
+packages = [{include = "src"}]
+
+[tool.poetry.dependencies]
+python = ">=3.11,<3.13"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.2"
+pytest-docker = "^2.0.0"
+pytest-timeout = "^2.1.0"
+requests = "^2.31.0"
+sqlalchemy = ">=1.4.36,<2.0"
+psycopg2-binary = "^2.9.9"
+apache-airflow = "2.9.1"
+uvicorn = {extras = ["standard"], version = "^0.24.0"}
+fastapi = "^0.104.1"
+pydantic = "^2.5.0"
+pydantic-settings = "^2.1.0"
+python-jose = {extras = ["cryptography"], version = "^3.3.0"}
+passlib = {extras = ["bcrypt"], version = "^1.7.4"}
+python-multipart = "^0.0.6"
+alembic = "^1.13.0"
+pytest-cov = "^4.1.0"
+coverage = {extras = ["toml"], version = "^7.3.0"}
+
+# Linting & Formatting
+black = "^24.4.2"
+flake8 = "^7.0.0"
+isort = "^5.13.2"
+mypy = "^1.10.0"
+pylint = "^3.2.2"
+bandit = "^1.7.8"
+
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+pythonpath = ["src"]
