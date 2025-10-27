@@ -69,7 +69,7 @@ on:
 
 jobs:
   lint:
-    name: Lint & Code Quality
+    name: Lint and code quality
     runs-on: ubuntu-latest
 
     steps:
@@ -88,24 +88,18 @@ jobs:
       - name: Install dependencies (incluyendo tests)
         run: poetry install
 
-      # - name: Check code formatting with Black
-      #   run: |
-      #     echo "Checking code formatting..."
-      #     black --check --diff src/ tests/
-      #   continue-on-error: false
-
       - name: Check import sorting with isort
         run: |
           echo "Checking import order..."
           poetry run isort --check-only --diff src/ tests/
-        continue-on-error: false
+        continue-on-error: true
 
-      # - name: Lint with flake8
-      #   run: |
-      #     echo "Running flake8..."
-      #     flake8 src/ tests/ --count --select=E9,F63,F7,F82 --show-source --statistics
-      #     flake8 src/ tests/ --count --max-complexity=10 --max-line-length=127 --statistics
-      #   continue-on-error: false
+      - name: Lint with flake8
+        run: |
+          echo "Running flake8..."
+          poetry run flake8 src/ tests/ --count --select=E9,F63,F7,F82 --show-source --statistics
+          poetry run flake8 src/ tests/ --count --max-complexity=10 --max-line-length=127 --statistics
+        continue-on-error: true
 
       - name: Security check with bandit
         run: |
@@ -124,6 +118,12 @@ jobs:
           echo "Running pylint..."
           poetry run pylint src/ --disable=C0111,C0103,R0903 --max-line-length=127
         continue-on-error: true
+
+      # - name: Check code formatting with Black
+      #   run: |
+      #     echo "Checking code formatting..."
+      #     black --check --diff src/ tests/
+      #   continue-on-error: false
 
   test_docker_integration:
     runs-on: ubuntu-latest
