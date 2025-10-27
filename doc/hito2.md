@@ -9,18 +9,15 @@ Antes de seguir con información más detallada sobre las decisiones tomadas, se
 1. Gestor de tareas: Poetry
 Herramienta moderna de Python para gestión de dependencias, empaquetado y ejecución de scripts.
 
-Alternativas evaluadas: pip + requirements.txt
 
-2. Biblioteca de Aserciones: pytest (estilo BDD)
-Framework de testing con enfoque en Behavior-Driven Development para tests más legibles y mantenibles.
+2. Biblioteca de Aserciones: pytest.
 
 
 3. Test Runner: pytest
 Sistema completo de descubrimiento, ejecución y reporte de pruebas con un ecosistema de plugins bastante extenso.
 
 
-4. Integración con construcción: Poetry + Makefile
-Comandos estandarizados (make test, poetry run test) para ejecutar pruebas de forma consistente en local y CI.
+4. Integración con construcción: Poetry.
 
 
 5. Sistema CI: GitHub Actions
@@ -211,3 +208,268 @@ Si añadiéramos -s podríamos ver todos los logs de las ejecuciones de los test
 
 #### Poetry.lock
 `poetry.lock` es generado automáticamente y contiene las versiones exactas de todas las dependencias. En este caso, no se ha tenido en cuenta ya que cada test inicia un entorno independiente Ubuntu e instala las dependencias desde 0.
+
+### **Biblioteca de aserciones y Test Runner: pytest**
+   
+Antes de hablar sobre esto, convendría explicar detenidamente todos los test que se llevarán a cabo, y si siguen un enfoque BDD o TDD.
+
+
+#### Test de los DAGs
+
+##### Tests de DAGs de Airflow
+
+Los tests de DAGs validan la correcta estructura, configuración y relaciones entre tareas de los workflows de Airflow sin necesidad de ejecutarlos. Utilizan `DagBag` de Airflow para cargar y analizar los DAGs estáticamente. Para estos test se sigue un enfoque TDD, ya que fueron escritos sin tener en cuenta como serán futuros DAGS, lanzando arseciones para corroborar que a ojos de Airflow, los DAGS son correctos.
+
+###### ¿Qué son los fixtures en pytest?
+
+Los **fixtures** son funciones que proporcionan recursos reutilizables para los tests. Actúan como "preparación" y "limpieza" antes y después de cada test, garantizando un entorno consistente y controlado.
+
+**Scopes disponibles:**
+- `function`: ejecuta antes/después de cada función de test (por defecto).
+- `class`: ejecuta una vez por clase de test.
+- `module`: ejecuta una vez por archivo de test.
+- `session`: ejecuta una vez por sesión completa de tests.
+
+###### Fixture: dagbag
+
+```python
+@pytest.fixture(scope="module")
+def dagbag():
+    """Load all DAGs from the src/dags folder"""
+```
+
+Carga todos los DAGs desde `src/dags/` una sola vez por módulo de test.
+
+- Define `AIRFLOW_HOME` temporal para aislar tests
+- Configura carpeta de DAGs apuntando a `src/dags/`
+- Desactiva ejemplos de Airflow (`AIRFLOW__CORE__LOAD_EXAMPLES=False`)
+- Retorna un `DagBag` con todos los DAGs cargados.
+
+---
+
+###### 1. `test_no_import_errors`
+
+```python
+def test_no_import_errors(dagbag):
+    """Test that all DAGs can be imported without errors"""
+    assert len(dagbag.import_errors) == 0
+```
+
+**Qué valida:**
+- Todos los archivos Python en `src/dags/` se importan sin errores
+- No hay errores de sintaxis
+- Todas las dependencias están disponibles
+
+**Falla si:**
+- Hay un `SyntaxError` en algún DAG
+- Falta algún import (`ModuleNotFoundError`)
+- Hay errores en la definición del DAG
+
+---
+
+###### 2. `test_dags_loaded`
+
+```python
+def test_dags_loaded(dagbag):
+    """Test that DAGs are loaded"""
+    assert len(dagbag.dags) > 0
+```
+
+**Qué valida:**
+- Al menos un DAG fue cargado exitosamente
+- La carpeta `src/dags/` no está vacía
+
+**Falla si:**
+- No hay archivos `.py` con DAGs válidos
+- Todos los DAGs tienen errores de importación
+
+---
+
+###### 3. `test_dag_structure`
+
+```python
+def test_dag_structure(dagbag):
+    """Test each DAG has required attributes"""
+    for dag_id, dag in dagbag.dags.items():
+        assert dag.owner is not None
+        assert dag.start_date is not None
+        assert isinstance(dag.start_date, datetime)
+```
+
+**Qué valida para cada DAG:**
+- Tiene un `owner` definido (responsable del DAG)
+- Tiene `start_date` (fecha desde la cual puede ejecutarse)
+- El `start_date` es un objeto `datetime` válido
+- Emite warning si `schedule_interval` es `None` (DAG manual)
+
+**Falla si:**
+- `owner` es `None`.
+- `start_date` no está definido o no es `datetime`.
+
+---
+
+###### 4. `test_dag_has_tasks`
+
+```python
+def test_dag_has_tasks(dagbag):
+    """Test that each DAG has at least one task"""
+    assert len(dag.tasks) > 0
+```
+
+**Qué valida:**
+- Cada DAG tiene al menos una tarea definida
+- Imprime la lista de tasks para debugging
+
+**Falla si:**
+- Un DAG está vacío (sin operadores/tasks)
+
+---
+
+###### 5. `test_dag_task_dependencies`
+
+```python
+def test_dag_task_dependencies(dagbag):
+    """Test that tasks have proper dependencies"""
+    for upstream_task_id in task.upstream_task_ids:
+        assert upstream_task_id in dag.task_dict
+```
+
+**Qué valida:**
+- Todas las dependencias upstream existen en el DAG
+- No hay referencias a tasks inexistentes
+
+**Falla si:**
+```python
+# task1 >> task2  pero task1 no existe
+task2.set_upstream('task1')  # task1 no definido
+```
+
+---
+
+###### 6. `test_dag_cycles`
+
+```python
+def test_dag_cycles(dagbag):
+    """Test that DAGs don't have cycles"""
+    assert dag_id not in dagbag.import_errors
+```
+
+**Qué valida:**
+- No hay dependencias cíclicas entre tasks
+- El grafo del DAG es acíclico (DAG = Directed Acyclic Graph)
+
+**Falla si hay ciclo:**
+```python
+task1 >> task2 >> task3 >> task1  # Ciclo!
+```
+
+---
+
+###### 7. `test_dag_default_args`
+
+```python
+def test_dag_default_args(dagbag):
+    """Test that DAGs have proper default_args"""
+    required_default_args = ["owner"]
+```
+
+**Qué valida:**
+- El DAG tiene `default_args` con al menos `owner`
+- Si no hay `default_args`, verifica que `owner` esté en el DAG directamente
+---
+
+###### 8. `test_dag_task_retries`
+
+```python
+def test_dag_task_retries(dagbag):
+    """Test that tasks have retry configuration"""
+    retries = task.retries or dag.default_args.get("retries")
+    assert retries >= 0
+```
+
+**Qué valida:**
+- Cada task tiene configuración de reintentos (directa o heredada).
+- El número de retries no es negativo.
+- Emite warning si no hay configuración de retries.
+
+**Por qué es importante:**
+- Tareas sin retries pueden fallar permanentemente por errores temporales.
+
+---
+
+###### 9. `test_dag_tasks_have_operators`
+
+```python
+def test_dag_tasks_have_operators(dagbag):
+    """Test that tasks use valid operators"""
+    valid_operators = [
+        "PythonOperator", "BashOperator", "DummyOperator", ...
+    ]
+```
+
+**Qué valida:**
+- Las tasks usan operadores conocidos de Airflow.
+- Emite warning si usa operadores custom o poco comunes.
+
+**No falla el test**, solo informa sobre operadores no estándar.
+
+**Ejemplo:**
+- `PythonOperator` → Reconocido
+- `MyCustomOperator` → Warning (pero no falla).
+
+###### 10. `test_dag_scheduling`
+
+```python
+def test_dag_scheduling(dagbag):
+    """Test that DAGs have valid scheduling configuration"""
+```
+
+**Qué valida:**
+- Si hay `schedule_interval`, no es una cadena vacía
+- El `start_date` no está más de 1 año en el futuro
+- Compatibilidad de timezone entre `start_date` y `datetime.now()`
+- Warning si no hay schedule (DAG manual)
+
+
+---
+
+###### 11. `test_dag_timeout_configuration`
+
+```python
+def test_dag_timeout_configuration(dagbag):
+    """Test that DAGs have timeout configuration"""
+```
+
+**Qué valida:**
+- Verifica si las tasks tienen `execution_timeout` configurado.
+- No falla, solo informa.
+
+---
+
+###### 12. `test_dag_tags`
+
+```python
+def test_dag_tags(dagbag):
+    """Test that DAGs have tags for organization"""
+```
+
+**Qué valida:**
+- Verifica si el DAG tiene tags para organización.
+- No falla, solo recomienda añadir tags.
+
+
+---
+
+###### 13. `test_dag_documentation`
+
+```python
+def test_dag_documentation(dagbag):
+    """Test that DAGs have documentation"""
+```
+
+**Qué valida:**
+- Verifica si el DAG tiene `description`.
+- Verifica si las tasks tienen `doc` o `doc_md`.
+- No falla, solo recomienda documentación.
+
+---
