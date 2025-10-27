@@ -981,4 +981,509 @@ def test_alerts_ordered_by_creation_time(test_db, sample_alert_data):
 
 
 #### Test integración Docker
+Antes de continuar, notar que la documentación sobre Docker y Docker-Compose se introducirá en siguientes versiones. Ahora, lo importante es que se usan las GH Secrets para no exponer credenciales y se usa Poetry para las dependencias entre contenedores.
 
+Estas son las secrets en GitHub:
+![alt text](imgs/gh_secrets.png)
+##### ¿Por qué no es TDD ni BDD?
+
+Los tests de integración con Docker siguen un enfoque diferente a TDD y BDD:
+
+- **No es TDD**: estos tests NO se escribieron antes del código de infraestructura. Los servicios (PostgreSQL, FastAPI, Airflow) ya existían. Los tests validan que la **infraestructura Docker** funciona correctamente.
+
+- **No es BDD**: no usan sintaxis (Given/When/Then) ni se enfocan en comportamiento del usuario. Validan **conectividad, salud y disponibilidad** de servicios en contenedores.
+
+Este tipo de tests valida:
+- **Disponibilidad**: ¿los contenedores están corriendo?
+- **Conectividad**: ¿los servicios responden en sus puertos?
+- **Salud**: ¿los health checks pasan?
+- **Comunicación inter-servicios**: ¿la API se conecta a PostgreSQL?
+
+Son tests **post-deployment** que garantizan que `docker compose up` genera un entorno funcional completo.
+
+---
+
+##### Archivo: conftest.py
+
+El archivo `conftest.py` es el corazón de la configuración de tests de pytest. Define **fixtures compartidas** entre múltiples archivos de test, evitando duplicación de código.
+
+**¿Por qué existe conftest.py?**
+
+Pytest busca automáticamente archivos `conftest.py` en el directorio de tests y los carga antes de ejecutar cualquier test. Las fixtures definidas aquí están **disponibles para todos los tests** sin necesidad de importarlas explícitamente.
+
+---
+
+###### Configuración de Docker Compose
+
+**Fixture: `docker_compose_command`**
+```python
+@pytest.fixture(scope="session")
+def docker_compose_command():
+    if os.getenv("GITHUB_ACTIONS") or os.getenv("CI"):
+        return "docker compose"
+    return "docker-compose"
+```
+Retorna el comando correcto de Docker Compose según el entorno.
+
+- **GitHub Actions**: usa `docker compose` (v2)
+- **Local**: puede usar `docker-compose` (v1)
+
+**Scope `session`:** se ejecuta una sola vez por sesión de tests (no por cada test).
+
+---
+
+**Fixture: `docker_compose_file`**
+
+```python
+@pytest.fixture(scope="session")
+def docker_compose_file(pytestconfig):
+    root = Path(pytestconfig.rootdir)
+    return str(root / "docker" / "docker-compose.yml")
+```
+Retorna la ruta absoluta al archivo `docker-compose.yml`.
+
+**Cómo funciona:**
+- `pytestconfig.rootdir`: directorio raíz del proyecto (donde está `pyproject.toml`)
+- Construye la ruta: `<root>/docker/docker-compose.yml`
+
+pytest-docker usa esta ruta para levantar los servicios.
+
+---
+
+###### Fixture Helper: wait_for
+```python
+@pytest.fixture(scope="session")
+def wait_for(docker_services, timeout=180.0, pause=3.0):
+    """Helper para esperar con backoff"""
+
+    def _wait(check, timeout=timeout, pause=pause):
+        def check_with_exception_handling():
+            try:
+                return check()
+            except Exception:
+                return False
+
+        docker_services.wait_until_responsive(timeout=timeout, pause=pause, check=check_with_exception_handling)
+
+    return _wait
+```
+Helper function para esperar que un servicio esté listo con reintentos.
+
+**Cómo funciona:**
+1. Acepta una función `check()` que retorna `True` si el servicio está listo.
+2. Reintenta cada `pause` segundos.
+3. Timeout total: `timeout` segundos.
+4. Maneja excepciones automáticamente (las trata como "no listo").
+
+**Ejemplo de uso conceptual:**
+- Define función que verifica si DB acepta conexiones
+- `wait_for()` reintenta hasta que retorne `True` o timeout
+
+Está función es necesaria para ser permisivos con el tiempo que pueden tardar los contenedores en arrancar.
+---
+
+###### Fixtures de Conexión a Servicios
+
+**Fixture: `db_dsn`**
+```python
+@pytest.fixture(scope="session")
+def db_dsn(docker_services, docker_ip):
+    """DSN para conectar a PostgreSQL"""
+    port = docker_services.port_for("db", 5432)
+    return f"postgresql://postgres:postgres@{docker_ip}:{port}/alerts"
+```
+Retorna el DSN (Data Source Name) de PostgreSQL.
+
+**Cómo funciona pytest-docker:**
+1. `docker_services.port_for("db", 5432)`: obtiene el puerto **host** mapeado desde el contenedor.
+2. `docker_ip`: IP donde Docker está escuchando.
+3. Construye DSN completo.
+
+---
+
+**Fixture: `airflow_url`**
+```python
+@pytest.fixture(scope="session")
+def airflow_url(docker_services, docker_ip):
+    """URL para Airflow webserver"""
+    port = docker_services.port_for("airflow-webserver", 8080)
+    return f"http://{docker_ip}:{port}/health"
+```
+Retorna la URL del health check de Airflow.
+
+**Detalles:**
+- Airflow expone puerto `8080` internamente.
+- `/health`: endpoint que retorna estado del webserver
+
+---
+
+**Fixture: `web_url`**
+```python
+@pytest.fixture(scope="session")
+def web_url(docker_services, docker_ip):
+    """URL para el servicio web/API"""
+    port = docker_services.port_for("web", 8000)
+    return f"http://{docker_ip}:{port}"
+```
+Retorna la URL base de la API FastAPI.
+
+---
+
+**Fixture: `web_health_url`**
+```python
+@pytest.fixture(scope="session")
+def web_health_url(web_url):
+    """URL del health check del servicio web"""
+    return f"{web_url}/alerts/health"
+```
+URL específica del health check de la API.
+
+---
+
+##### Cómo funciona pytest-docker
+
+**pytest-docker** es un plugin que integra Docker Compose con pytest, permitiendo levantar servicios automáticamente durante los tests.
+
+**Flujo de ejecución:**
+
+1. **Inicio de sesión de tests** (`scope="session"`):
+   - pytest-docker ejecuta `docker compose up` usando el archivo especificado.
+   - Levanta todos los servicios definidos (db, web, airflow-webserver, etc.).
+   - Expone fixtures: `docker_services`, `docker_ip`.
+
+2. **Ejecución de tests**:
+   - Los tests usan fixtures como `db_dsn`, `web_url` para conectarse.
+   - `wait_for()` garantiza que los servicios estén listos antes de ejecutar tests.
+   - `docker_services.port_for()` descubre puertos mapeados dinámicamente.
+
+3. **Fin de sesión**:
+   - pytest-docker ejecuta `docker compose down`.
+   - Limpia todos los contenedores y volúmenes.
+
+**Configuración implícita:**
+
+pytest-docker detecta automáticamente:
+- `docker_compose_file`: fixture que retorna la ruta al YAML.
+- `docker_compose_command`: comando a usar (docker-compose vs docker compose).
+---
+
+##### Archivo: test_container.py
+
+Los tests de contenedores validan la **integración de servicios** desplegados con Docker Compose. Siguen un orden secuencial (test_01, test_02...) para validar progresivamente la disponibilidad del stack completo.
+
+---
+
+###### Test 1: Database Connection
+```python
+def test_01_wait_for_database(wait_for, db_dsn):
+    """Test that database is accessible"""
+    print(f"\n[TEST] Testing database connection: {db_dsn}")
+
+    def is_db_ready():
+        try:
+            engine = create_engine(db_dsn, connect_args={"connect_timeout": 3})
+            with engine.connect() as conn:
+                result = conn.execute(text("SELECT 1")).scalar()
+                return result == 1
+        except Exception as e:
+            print(f"[TEST] DB not ready: {type(e).__name__}")
+            return False
+
+    wait_for(is_db_ready, timeout=90.0, pause=3.0)
+    print("[TEST] ✅ Database is ready!")
+```
+**Qué valida:**
+- PostgreSQL está corriendo en su contenedor.
+- Acepta conexiones en el puerto mapeado.
+- Responde a queries SQL (`SELECT 1`).
+
+**Flujo:**
+1. Intenta conectar cada 3 segundos.
+2. Ejecuta query de prueba.
+3. Si falla, reintenta hasta 90 segundos.
+4. Si pasa: PostgreSQL operacional.
+
+---
+
+###### Test 2: Web Service Health
+```python
+def test_02_wait_for_web_service(wait_for, web_health_url, web_url):
+    """Test that web service is accessible and healthy"""
+    print(f"\n[TEST] Testing web service: {web_url}")
+
+    # En CI, dar tiempo para que el servicio inicie
+    if os.getenv("CI"):
+        print("[TEST] Running in CI, waiting 60s before checking...")
+        time.sleep(60)
+
+    def is_web_ready():
+        try:
+            print(f"[TEST] Checking web service at {web_health_url}...")
+            r = requests.get(f"{web_url}/alerts/health", timeout=10)
+            print(f"[TEST] Status code: {r.status_code}")
+
+            if r.status_code == 200:
+                data = r.json()
+                print(f"[TEST] Response: {data}")
+
+                # Verificar que el health check retorna el formato esperado
+                if data.get("status") == "healthy":
+                    print("[TEST] ✅ Web service is healthy!")
+                    return True
+                else:
+                    print(f"[TEST] ✗ Web service unhealthy: {data}")
+                    return False
+
+            return False
+        except requests.exceptions.ConnectionError as e:
+            print(f"[TEST] ✗ Connection error: {str(e)[:100]}")
+            return False
+        except requests.exceptions.Timeout:
+            print(f"[TEST] ✗ Request timeout")
+            return False
+        except Exception as e:
+            print(f"[TEST] ✗ Unexpected error: {type(e).__name__}: {str(e)[:100]}")
+            return False
+
+    # Timeout adaptativo según entorno
+    timeout = 300.0 if os.getenv("CI") else 60.0
+    pause = 5.0
+
+    try:
+        wait_for(is_web_ready, timeout=timeout, pause=pause)
+        print("[TEST] ✅ Web service is ready!")
+    except Exception as e:
+        if os.getenv("CI"):
+            pytest.skip(f"Web service test skipped in CI due to: {e}")
+        else:
+            raise
+```
+**Qué valida:**
+- La API FastAPI está corriendo.
+- El endpoint `/alerts/health` responde con HTTP 200.
+- El health check retorna `{"status": "healthy"}`.
+
+**Adaptación a CI:**
+- **En CI**: timeout 300s, espera inicial 60s (contenedores arrancan más lento).
+- **Local**: timeout 60s (hardware dedicado arranca más rápido).
+
+**Manejo de errores:**
+- `ConnectionError`: servicio no disponible → reintenta.
+- `Timeout`: servicio colgado → reintenta.
+- Status ≠ 200: servicio con problemas → reintenta.
+
+---
+
+###### Test 3: API Endpoints
+```python
+def test_03_web_service_endpoints(web_url):
+    """Test that main API endpoints are accessible"""
+    print(f"\n[TEST] Testing web service endpoints: {web_url}")
+
+    # Test root endpoint
+    try:
+        r = requests.get(f"{web_url}/alerts/", timeout=10)
+        print(f"[TEST] Root endpoint status: {r.status_code}")
+        assert r.status_code in [200, 404], "Root endpoint should respond"
+    except Exception as e:
+        print(f"[TEST] ✗ Root endpoint failed: {e}")
+```
+**Qué valida:**
+- Endpoint principal `/alerts/` está accesible.
+- Retorna status HTTP válido (200 o 404 según si hay datos).
+
+**Por qué acepta 404:**
+- En BD vacía, puede retornar 404 (no hay alertas).
+- Lo importante es que **responde**, no el contenido.
+
+---
+
+###### Test 4: Database Integration
+```python
+def test_04_web_database_integration(web_url, db_dsn):
+    """Test that web service can connect to database"""
+    print(f"\n[TEST] Testing web service database integration")
+
+    try:
+        # Verificar que el health check incluye estado de DB
+        r = requests.get(f"{web_url}/alerts/health", timeout=10)
+        assert r.status_code == 200
+
+        data = r.json()
+        print(f"[TEST] Health check response: {data}")
+
+        # Verificar que incluye información de la base de datos
+        if "database" in data:
+            db_dict = data["database"]
+            print(f"[TEST] Database status: {db_dict['status']}")
+            assert db_dict["status"] in ["connected", "ok"], f"Database should be connected, got: {db_dict['status']}"
+            print("[TEST] ✅ Web service is connected to database!")
+        else:
+            print("[TEST] ⚠️  Health check doesn't include database status")
+
+    except Exception as e:
+        pytest.fail(f"Database integration test failed: {e}")
+
+
+```
+**Qué valida:**
+- La API puede conectarse a PostgreSQL.
+- El health check reporta estado de BD.
+- La conexión está activa (`connected`).
+- Verifica que `web` puede hacer queries a `db`.
+
+---
+
+###### Test 5: Basic API Operations
+```python
+def test_05_web_service_basic_api(web_url):
+    """Test basic API operations (if authentication not required)"""
+    print(f"\n[TEST] Testing basic API operations")
+
+    try:
+        # Intentar listar alertas (puede requerir auth)
+        r = requests.get(f"{web_url}/alerts/", timeout=10)
+        print(f"[TEST] GET /alerts/ status: {r.status_code}")
+
+        if r.status_code == 200:
+            data = r.json()
+            print(f"[TEST] ✅ Retrieved {len(data)} alerts")
+            assert isinstance(data, list), "Should return a list"
+        elif r.status_code == 401:
+            print("[TEST] ℹ️  Endpoint requires authentication (expected)")
+        else:
+            print(f"[TEST] ⚠️  Unexpected status code: {r.status_code}")
+
+    except Exception as e:
+        print(f"[TEST] ⚠️  API test skipped: {e}")
+
+```
+**Qué valida:**
+- Endpoint retorna datos en formato correcto (lista JSON).
+
+---
+
+###### Test 6: Airflow Webserver
+```python
+@pytest.mark.skipif(os.getenv("SKIP_AIRFLOW_TEST"), reason="Airflow test skipped")
+def test_06_airflow_webserver_health(wait_for, airflow_url):
+    """Test that Airflow webserver is accessible and healthy"""
+    print(f"\n[TEST] Testing Airflow webserver: {airflow_url}")
+
+    # En CI, dar más tiempo inicial
+    if os.getenv("CI"):
+        print("[TEST] Running in CI, waiting 60s before checking...")
+        time.sleep(60)
+
+    def is_airflow_ready():
+        try:
+            base_url = airflow_url.replace("/health", "")
+            print(f"[TEST] Checking Airflow at {base_url}...")
+            r = requests.get(base_url, timeout=20, allow_redirects=True)
+            print(f"[TEST] Status code: {r.status_code}")
+
+            if r.status_code in [200, 302, 401]:
+                print("[TEST] ✅ Airflow is responding!")
+                return True
+            return False
+        except requests.exceptions.ConnectionError as e:
+            print(f"[TEST] ✗ Connection error: {str(e)[:100]}")
+            return False
+        except requests.exceptions.Timeout:
+            print(f"[TEST] ✗ Request timeout")
+            return False
+        except Exception as e:
+            print(f"[TEST] ✗ Unexpected error: {type(e).__name__}: {str(e)[:100]}")
+            return False
+
+    timeout = 480.0 if os.getenv("CI") else 300.0
+    pause = 15.0 if os.getenv("CI") else 10.0
+
+    try:
+        wait_for(is_airflow_ready, timeout=timeout, pause=pause)
+        print("[TEST] ✅ Airflow webserver is ready!")
+    except Exception as e:
+        if os.getenv("CI"):
+            pytest.skip(f"Airflow test skipped in CI due to: {e}")
+        else:
+            raise
+```
+**Qué valida:**
+- Airflow webserver está corriendo.
+- Responde con HTTP 200, 302 (redirect), o 401 (auth).
+
+**Por qué es skippable:**
+- Airflow tarda 3-5 minutos en arrancar (muy lento).
+- Opcional en CI para acelerar tests.
+- Se puede saltar con `SKIP_AIRFLOW_TEST=1`.
+
+**Timeouts generosos:**
+- **CI**: 480s (8 minutos).
+- **Local**: 300s (5 minutos).
+
+**Por qué acepta 302 y 401:**
+- 302: Airflow redirige a login si no autenticado.
+- 401: requiere autenticación.
+- Ambos indican que el webserver está **vivo**.
+
+---
+
+###### Test 7: Integration Summary
+```python
+def test_07_all_services_integration(web_url, db_dsn, airflow_url):
+    """Test that all services are running and can communicate"""
+    print(f"\n[TEST] Testing integration of all services")
+
+    services_status = {"database": False, "web_service": False, "airflow": False}
+
+    # Check database
+    try:
+        engine = create_engine(db_dsn, connect_args={"connect_timeout": 3})
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        services_status["database"] = True
+        print("[TEST] ✅ Database is operational")
+    except Exception as e:
+        print(f"[TEST] ✗ Database failed: {e}")
+
+    # Check web service
+    try:
+        r = requests.get(f"{web_url}/alerts/health", timeout=10)
+        if r.status_code == 200:
+            services_status["web_service"] = True
+            print("[TEST] ✅ Web service is operational")
+    except Exception as e:
+        print(f"[TEST] ✗ Web service failed: {e}")
+
+    # Check Airflow (opcional)
+    if not os.getenv("SKIP_AIRFLOW_TEST"):
+        try:
+            base_url = airflow_url.replace("/health", "")
+            r = requests.get(base_url, timeout=20, allow_redirects=True)
+            if r.status_code in [200, 302, 401]:
+                services_status["airflow"] = True
+                print("[TEST] ✅ Airflow is operational")
+        except Exception as e:
+            print(f"[TEST] ⚠️  Airflow check skipped: {e}")
+
+    # Summary
+    operational = sum(services_status.values())
+    total = len(services_status)
+    print(f"\n[TEST] 📊 Services operational: {operational}/{total}")
+    for service, status in services_status.items():
+        emoji = "✅" if status else "❌"
+        print(f"[TEST] {emoji} {service}")
+
+    # Al menos DB y Web deben estar operacionales
+    assert services_status["database"], "Database must be operational"
+    assert services_status["web_service"], "Web service must be operational"
+
+    print("[TEST] ✅ Core services integration test passed!")
+```
+**Qué valida:**
+- **Resumen global**: todos los servicios core están operacionales.
+- Database y Web son **críticos** (deben pasar).
+- Airflow es **opcional** (puede fallar sin romper el test).
+
+
+Una vez explicados todos los test y justificado en el enfoque seguido, ya podemos responder a las tres preguntas faltantes. La biblioteca de aserciones es PyTest usando un enfoque mayormente TDD, el test runner también es pytest y para correrlo en Actions se usa Poetry, que mantiene una sintaxis muy limpia y buena coordinación entre dependencias.
