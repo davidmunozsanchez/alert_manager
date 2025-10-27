@@ -1574,3 +1574,7 @@ Exitosas (aquí se ilustra una ejecución normal si todo va bien). Para ver las 
 ![alt text](./imgs/exitosa4.png)
 
 Fallidas:
+
+- DAGS
+- Docker
+- Crud
