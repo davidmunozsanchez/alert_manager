@@ -1566,3 +1566,11 @@ En general, detecta errores de tipos.
 
 A continuación, se propondrán un test exitoso y otro fallido por cada tipo de test, para ilustrar mejor el comportamiento.
 
+Exitosas (aquí se ilustra una ejecución normal si todo va bien). Para ver las recomendaciones de Lint es mejor consultar directamente el trabajo y modificar el código en base a eso. Black también hace un buen trabajo, aunque se puede dejar algunas cosas.
+
+![alt text](./imgs/exitosa1.png)
+![alt text](./imgs/exitosa2.png)
+![alt text](./imgs/exitosa3.png)
+![alt text](./imgs/exitosa4.png)
+
+Fallidas:
