@@ -35,9 +35,15 @@ def wait_for(docker_services, timeout=180.0, pause=3.0):
 
 @pytest.fixture(scope="session")
 def db_dsn(docker_services, docker_ip):
-    """DSN para conectar a PostgreSQL"""
+    """DSN para conectar a PostgreSQL usando las mismas variables que docker-compose"""
     port = docker_services.port_for("db", 5432)
-    return f"postgresql://postgres:postgres@{docker_ip}:{port}/alerts"
+    
+    # Usar las mismas variables de entorno que docker-compose.yml
+    db_user = os.getenv("POSTGRES_USER", "postgres")
+    db_password = os.getenv("POSTGRES_PASSWORD", "postgres") 
+    db_name = os.getenv("POSTGRES_DB", "alerts")
+    
+    return f"postgresql://{db_user}:{db_password}@{docker_ip}:{port}/{db_name}"
 
 
 @pytest.fixture(scope="session")

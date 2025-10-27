@@ -1586,4 +1586,10 @@ Ocurre un comportamiento curioso, pasa el test de cycles pero como Airflow detec
 En futuras actualizaciones se eliminará el test de ciclos.
 
 - Docker
+
 - Crud
+Si se rompe a propósito la auto expiración de alertas en get alerts, falla lo siguiente:
+![alt text](./imgs/fallo_CRUD.png)
+
+![alt text](./imgs/fallo_CRUD1.png)
+Tal y como se esperaba, el test de auto expiración falla.
