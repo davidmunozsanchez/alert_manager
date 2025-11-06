@@ -1,227 +1,152 @@
-"""
-Sistema de logging para la API
-"""
-import json
 import logging
-import sys
 from datetime import datetime
-from typing import Any, Dict, Optional
-from contextvars import ContextVar
-from pathlib import Path
-import traceback
 
-# Context variables para tracking de requests
-request_id_var: ContextVar[Optional[str]] = ContextVar('request_id', default=None)
-user_id_var: ContextVar[Optional[str]] = ContextVar('user_id', default=None)
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy.orm import Session
 
-class StructuredFormatter(logging.Formatter):
-    """
-    Formatter que produce logs estructurados en JSON
-    """
+from .database import get_db
+from .routers import alerts
+from ..infrastructure.middleware import (
+    LoggingMiddleware, 
+    SecurityMiddleware, 
+    HealthCheckMiddleware
+)
+from ..infrastructure.logging import logger
+
+# from .auth import initialize_firebase
+
+# # Inicializar Firebase
+# initialize_firebase()
+
+app = FastAPI(
+    title="Weather Alerts API", 
+    description="Gestión de alertas meteorológicas y otros tipos", 
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc"
+)
+
+# ================================
+# MIDDLEWARE CONFIGURATION
+# ================================
+
+# 1. Health Check Middleware (más rápido, sin logging)
+app.add_middleware(HealthCheckMiddleware)
+
+# 2. Security Middleware
+app.add_middleware(SecurityMiddleware, max_requests_per_minute=1000)
+
+# 3. Logging Middleware (debe ir después de security)
+app.add_middleware(LoggingMiddleware)
+
+# 4. CORS Middleware (debe ir al final)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # En producción, especificar dominios exactos
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ================================
+# STARTUP/SHUTDOWN EVENTS
+# ================================
+
+@app.on_event("startup")
+async def startup_event():
+    """Evento de inicio de la aplicación"""
+    logger.info(
+        "Alert Manager API starting up",
+        event_type="application_startup",
+        version="1.0.0",
+        environment="development"  # Cambiar según entorno
+    )
+
+@app.on_event("shutdown")
+async def shutdown_event():  
+    """Evento de cierre de la aplicación"""
+    logger.info(
+        "Alert Manager API shutting down",
+        event_type="application_shutdown"
+    )
+
+# ================================
+# EXCEPTION HANDLERS
+# ================================
+
+@app.exception_handler(ValueError)
+async def value_error_handler(request: Request, exc: ValueError):
+    """Handler para errores de valor"""
+    from ..infrastructure.logging import log_error
     
-    def format(self, record: logging.LogRecord) -> str:
-        # Datos base del log
-        log_data = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-            "level": record.levelname,
-            "logger": record.name,
-            "message": record.getMessage(),
-            "module": record.module,
-            "function": record.funcName,
-            "line": record.lineno,
-            "thread": record.thread,
-            "process": record.process,
-        }
-        
-        # Añadir request_id si está disponible
-        request_id = request_id_var.get()
-        if request_id:
-            log_data["request_id"] = request_id
-        
-        # Añadir user_id si está disponible
-        user_id = user_id_var.get()
-        if user_id:
-            log_data["user_id"] = user_id
-        
-        # Añadir información de excepción si existe
-        if record.exc_info:
-            log_data["exception"] = {
-                "type": record.exc_info[0].__name__,
-                "message": str(record.exc_info[1]),
-                "traceback": traceback.format_exception(*record.exc_info)
+    log_error(
+        error=exc,
+        context="value_error_handler",
+        request_path=str(request.url.path),
+        request_method=request.method
+    )
+    
+    return JSONResponse(
+        status_code=400,
+        content={
+            "error": {
+                "code": "INVALID_VALUE",
+                "message": str(exc),
+                "type": "validation_error"
             }
-        
-        # Añadir campos extra si existen
-        if hasattr(record, 'extra_fields'):
-            log_data.update(record.extra_fields)
-        
-        return json.dumps(log_data, ensure_ascii=False, default=str)
-
-class AlertManagerLogger:
-    """
-    Logger personalizado para el sistema de alertas
-    """
-    
-    def __init__(self, name: str):
-        self.logger = logging.getLogger(name)
-        self._setup_logger()
-    
-    def _setup_logger(self):
-        """Configura el logger con handlers apropiados"""
-        if self.logger.handlers:
-            return  # Ya está configurado
-        
-        self.logger.setLevel(logging.INFO)
-        
-        # Handler para consola (desarrollo)
-        console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setFormatter(StructuredFormatter())
-        console_handler.setLevel(logging.INFO)
-        self.logger.addHandler(console_handler)
-        
-        # Handler para archivo (producción)
-        log_dir = Path("logs")
-        log_dir.mkdir(exist_ok=True)
-        
-        # Log general
-        file_handler = logging.FileHandler(log_dir / "alert_manager.log", encoding='utf-8')
-        file_handler.setFormatter(StructuredFormatter())
-        file_handler.setLevel(logging.INFO)
-        self.logger.addHandler(file_handler)
-        
-        # Log solo para errores
-        error_handler = logging.FileHandler(log_dir / "errors.log", encoding='utf-8')
-        error_handler.setFormatter(StructuredFormatter())
-        error_handler.setLevel(logging.ERROR)
-        self.logger.addHandler(error_handler)
-        
-        # Evitar propagación a root logger
-        self.logger.propagate = False
-    
-    def info(self, message: str, **extra_fields):
-        """Log nivel INFO"""
-        self._log(logging.INFO, message, extra_fields)
-    
-    def warning(self, message: str, **extra_fields):
-        """Log nivel WARNING"""
-        self._log(logging.WARNING, message, extra_fields)
-    
-    def error(self, message: str, **extra_fields):
-        """Log nivel ERROR"""
-        self._log(logging.ERROR, message, extra_fields)
-    
-    def debug(self, message: str, **extra_fields):
-        """Log nivel DEBUG"""
-        self._log(logging.DEBUG, message, extra_fields)
-    
-    def critical(self, message: str, **extra_fields):
-        """Log nivel CRITICAL"""
-        self._log(logging.CRITICAL, message, extra_fields)
-    
-    def _log(self, level: int, message: str, extra_fields: Dict[str, Any]):
-        """Método interno para logging con campos extra"""
-        if extra_fields:
-            self.logger.log(level, message, extra={'extra_fields': extra_fields})
-        else:
-            self.logger.log(level, message)
-
-# Instancia global del logger
-logger = AlertManagerLogger("alert_manager")
-
-def log_api_request(method: str, path: str, status_code: int, 
-                   duration_ms: float, **extra_fields):
-    """
-    Log específico para requests de API
-    """
-    logger.info(
-        f"API Request: {method} {path} - {status_code}",
-        event_type="api_request",
-        method=method,
-        path=path,
-        status_code=status_code,
-        duration_ms=duration_ms,
-        **extra_fields
+        }
     )
 
-def log_business_operation(operation: str, entity_type: str, 
-                          entity_id: Optional[str] = None, **extra_fields):
-    """
-    Log específico para operaciones de negocio
-    """
-    logger.info(
-        f"Business Operation: {operation} on {entity_type}",
-        event_type="business_operation",
-        operation=operation,
-        entity_type=entity_type,
-        entity_id=entity_id,
-        **extra_fields
+@app.exception_handler(404)
+async def not_found_handler(request: Request, exc):
+    """Handler para errores 404"""
+    return JSONResponse(
+        status_code=404,
+        content={
+            "error": {
+                "code": "NOT_FOUND",
+                "message": f"Endpoint {request.url.path} no encontrado",
+                "type": "not_found_error"
+            }
+        }
     )
 
-def log_data_source_check(source_name: str, success: bool, 
-                         alerts_created: int = 0, **extra_fields):
-    """
-    Log específico para verificación de fuentes de datos
-    """
-    status = "success" if success else "failed"
-    logger.info(
-        f"Data Source Check: {source_name} - {status}",
-        event_type="data_source_check",
-        source_name=source_name,
-        success=success,
-        alerts_created=alerts_created,
-        **extra_fields
-    )
+# ================================
+# ROUTERS
+# ================================
 
-def log_airflow_task(dag_id: str, task_id: str, state: str, **extra_fields):
-    """
-    Log específico para tareas de Airflow
-    """
-    logger.info(
-        f"Airflow Task: {dag_id}.{task_id} - {state}",
-        event_type="airflow_task",
-        dag_id=dag_id,
-        task_id=task_id,
-        state=state,
-        **extra_fields
-    )
+app.include_router(alerts.router)
 
-def log_error(error: Exception, context: str, **extra_fields):
-    """
-    Log específico para errores
-    """
-    logger.error(
-        f"Error in {context}: {str(error)}",
-        event_type="error",
-        error_type=type(error).__name__,
-        error_message=str(error),
-        context=context,
-        **extra_fields,
-        exc_info=True
-    )
+# ================================
+# ROOT ENDPOINT
+# ================================
 
-def log_security_event(event_type: str, description: str, **extra_fields):
-    """
-    Log específico para eventos de seguridad
-    """
-    logger.warning(
-        f"Security Event: {event_type} - {description}",
-        event_type="security",
-        security_event_type=event_type,
-        description=description,
-        **extra_fields
-    )
+@app.get("/")
+async def root():
+    """Endpoint raíz con información de la API"""
+    from ..infrastructure.logging import log_api_request
+    
+    return {
+        "message": "Alert Manager API",
+        "version": "1.0.0",
+        "description": "Sistema de gestión de alertas meteorológicas y otros tipos",
+        "docs": "/docs",
+        "health": "/alerts/health",
+        "endpoints": {
+            "alerts": "/alerts",
+            "health": "/alerts/health"
+        }
+    }
 
-def set_request_context(request_id: str, user_id: Optional[str] = None):
-    """
-    Establece el contexto de la request actual
-    """
-    request_id_var.set(request_id)
-    if user_id:
-        user_id_var.set(user_id)
-
-def clear_request_context():
-    """
-    Limpia el contexto de la request
-    """
-    request_id_var.set(None)
-    user_id_var.set(None)
+@app.get("/metrics")
+async def metrics():
+    """Endpoint básico de métricas"""
+    # Aquí podrías integrar Prometheus metrics en el futuro
+    return {
+        "service": "alert_manager",
+        "status": "running",
+        "timestamp": datetime.utcnow().isoformat(),
+        "uptime": "unknown"  # Implementar contador de uptime
+    }
