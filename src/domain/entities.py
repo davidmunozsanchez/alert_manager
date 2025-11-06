@@ -1,5 +1,5 @@
 """
-Entidades del dominio de negocio
+Entidades del dominio de negocio - CORREGIDO
 """
 from dataclasses import dataclass
 from datetime import datetime
@@ -59,7 +59,7 @@ class Alert:
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     source: Optional[str] = None  # Fuente que generó la alerta
-    metadata: Optional[Dict[str, Any]] = None  # Datos adicionales
+    extra_data: Optional[Dict[str, Any]] = None  # ← CAMBIO: metadata → extra_data
     
     def is_expired(self) -> bool:
         """Verifica si la alerta ha expirado"""
@@ -136,7 +136,7 @@ class DataSource:
     last_check: Optional[datetime] = None
     last_success: Optional[datetime] = None
     error_count: int = 0
-    configuration: Optional[Dict[str, Any]] = None
+    config_data: Optional[Dict[str, Any]] = None  # ← CAMBIO: configuration → config_data
     
     def can_be_checked(self) -> bool:
         """Verifica si la fuente puede ser verificada"""

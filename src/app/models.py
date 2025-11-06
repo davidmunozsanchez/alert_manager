@@ -24,7 +24,7 @@ class Alert(Base):
     
     # Nuevos campos para arquitectura moderna
     source = Column(String(255), nullable=True)  # Fuente que generó la alerta
-    metadata = Column(JSON, nullable=True)  # Datos adicionales en formato JSON
+    extra_data = Column(JSON, nullable=True)  # ← CAMBIO: metadata → extra_data
     
     # Índices compuestos para consultas frecuentes
     __table_args__ = (
@@ -46,7 +46,7 @@ class DataSource(Base):
     last_check = Column(DateTime, nullable=True)
     last_success = Column(DateTime, nullable=True)
     error_count = Column(Integer, nullable=False, default=0)
-    configuration = Column(JSON, nullable=True)
+    config_data = Column(JSON, nullable=True)  # ← CAMBIO: configuration → config_data
     
     # Índices para consultas frecuentes
     __table_args__ = (

@@ -1,5 +1,5 @@
 """
-Mappers para convertir entre entidades de dominio y modelos de base de datos
+Mappers para convertir entre entidades de dominio y modelos de base de datos - CORREGIDO
 """
 from typing import Optional
 from datetime import datetime
@@ -26,7 +26,7 @@ class AlertMapper:
             latitude=db_alert.latitude,
             longitude=db_alert.longitude,  
             source=db_alert.source,
-            metadata=db_alert.metadata
+            extra_data=db_alert.extra_data  # ← CAMBIO: metadata → extra_data
         )
     
     @staticmethod
@@ -45,7 +45,7 @@ class AlertMapper:
             latitude=domain_alert.latitude,
             longitude=domain_alert.longitude,
             source=domain_alert.source,
-            metadata=domain_alert.metadata
+            extra_data=domain_alert.extra_data  # ← CAMBIO: metadata → extra_data
         )
     
     @staticmethod
@@ -61,7 +61,7 @@ class AlertMapper:
         db_alert.latitude = domain_alert.latitude
         db_alert.longitude = domain_alert.longitude
         db_alert.source = domain_alert.source
-        db_alert.metadata = domain_alert.metadata
+        db_alert.extra_data = domain_alert.extra_data  # ← CAMBIO: metadata → extra_data
         return db_alert
 
 class DataSourceMapper:
@@ -80,7 +80,7 @@ class DataSourceMapper:
             last_check=db_source.last_check,
             last_success=db_source.last_success,
             error_count=db_source.error_count,
-            configuration=db_source.configuration
+            config_data=db_source.config_data  # ← CAMBIO: configuration → config_data
         )
     
     @staticmethod
@@ -96,7 +96,7 @@ class DataSourceMapper:
             last_check=domain_source.last_check,
             last_success=domain_source.last_success,
             error_count=domain_source.error_count,
-            configuration=domain_source.configuration
+            config_data=domain_source.config_data  # ← CAMBIO: configuration → config_data
         )
     
     @staticmethod
@@ -110,5 +110,5 @@ class DataSourceMapper:
         db_source.last_check = domain_source.last_check
         db_source.last_success = domain_source.last_success
         db_source.error_count = domain_source.error_count
-        db_source.configuration = domain_source.configuration
+        db_source.config_data = domain_source.config_data  # ← CAMBIO: configuration → config_data
         return db_source
