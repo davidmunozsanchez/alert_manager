@@ -1,5 +1,5 @@
 """
-Infraestructura moderna con Loguru y slowapi
+Infraestructura completa con repositories
 """
 from loguru import logger
 from .logging import (
@@ -13,12 +13,27 @@ from .logging import (
     clear_request_context,
     setup_logging
 )
-from .middleware import (
-    RequestLoggingMiddleware, 
-    SecurityHeadersMiddleware, 
-    HealthCheckMiddleware,
-    limiter
-)
+
+# Importar repositories y mappers
+from .repositories import SQLAlchemyAlertRepository, SQLAlchemyDataSourceRepository
+from .mappers import AlertMapper, DataSourceMapper
+
+# Intentar importar middleware
+try:
+    from .middleware import (
+        RequestLoggingMiddleware, 
+        SecurityHeadersMiddleware, 
+        HealthCheckMiddleware,
+        limiter
+    )
+    middleware_available = True
+except ImportError as e:
+    print(f"⚠️  Middleware no disponible: {e}")
+    middleware_available = False
+    RequestLoggingMiddleware = None
+    SecurityHeadersMiddleware = None
+    HealthCheckMiddleware = None
+    limiter = None
 
 __all__ = [
     # Logger principal
@@ -33,9 +48,18 @@ __all__ = [
     "set_request_context",
     "clear_request_context",
     "setup_logging",
-    # Middleware
-    "RequestLoggingMiddleware",
-    "SecurityHeadersMiddleware", 
-    "HealthCheckMiddleware",
-    "limiter",
+    # Repositories
+    "SQLAlchemyAlertRepository",
+    "SQLAlchemyDataSourceRepository",
+    # Mappers
+    "AlertMapper",
+    "DataSourceMapper",
 ]
+
+if middleware_available:
+    __all__.extend([
+        "RequestLoggingMiddleware",
+        "SecurityHeadersMiddleware", 
+        "HealthCheckMiddleware",
+        "limiter",
+    ])
