@@ -1,4 +1,5 @@
 import os
+import time
 from datetime import datetime
 
 from fastapi import FastAPI, Request, Depends
@@ -9,7 +10,6 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from loguru import logger
 
-from .database import get_db
 from .routers import alerts
 from ..infrastructure.middleware import (
     RequestLoggingMiddleware,
@@ -23,9 +23,9 @@ environment = os.getenv("ENVIRONMENT", "development")
 
 app = FastAPI(
     title="Alert Manager API",
-    description="Sistema moderno de gestión de alertas meteorológicas",
+    description="Sistema moderno de gestión de alertas con arquitectura por capas",
     version="1.0.0",
-    docs_url="/docs" if environment == "development" else None,  # Ocultar docs en producción
+    docs_url="/docs" if environment == "development" else None,
     redoc_url="/redoc" if environment == "development" else None
 )
 
@@ -51,7 +51,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"] if environment == "development" else ["https://yourdomain.com"],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
     allow_headers=["*"],
 )
 
@@ -67,7 +67,8 @@ async def startup_event():
         event_type="application_startup",
         version="1.0.0",
         environment=environment,
-        python_version=f"{os.sys.version_info.major}.{os.sys.version_info.minor}.{os.sys.version_info.micro}"
+        python_version=f"{os.sys.version_info.major}.{os.sys.version_info.minor}.{os.sys.version_info.micro}",
+        features=["layered_architecture", "domain_services", "structured_logging", "rate_limiting"]
     )
 
 @app.on_event("shutdown")
@@ -98,8 +99,21 @@ async def root(request: Request):
         "status": "running",
         "environment": environment,
         "timestamp": datetime.utcnow().isoformat(),
-        "docs": "/docs" if environment == "development" else "disabled",
-        "health": "/alerts/health"
+        "architecture": "layered_microservice",
+        "features": [
+            "domain_driven_design",
+            "clean_architecture", 
+            "structured_logging",
+            "rate_limiting",
+            "input_validation",
+            "error_handling"
+        ],
+        "endpoints": {
+            "alerts": "/alerts",
+            "health": "/alerts/health",
+            "docs": "/docs" if environment == "development" else "disabled",
+            "statistics": "/alerts/statistics/summary"
+        }
     }
 
 @app.get("/ping")
@@ -107,14 +121,19 @@ async def ping():
     """Ping simple para load balancers"""
     return {"ping": "pong", "timestamp": time.time()}
 
-@app.get("/metrics")
-@limiter.limit("10/minute")
-async def metrics(request: Request):
-    """Métricas básicas (expandir con Prometheus después)"""
+@app.get("/version")
+async def version():
+    """Información de versión detallada"""
     return {
         "service": "alert_manager",
-        "status": "running",
-        "uptime": "unknown",  # Implementar contador
+        "version": "1.0.0",
+        "build": "hito3",
         "environment": environment,
-        "requests_processed": "unknown"  # Implementar contador
+        "python_version": f"{os.sys.version_info.major}.{os.sys.version_info.minor}.{os.sys.version_info.micro}",
+        "architecture": {
+            "pattern": "clean_architecture",
+            "layers": ["api", "domain", "infrastructure"],
+            "database": "postgresql",
+            "logging": "loguru"
+        }
     }
