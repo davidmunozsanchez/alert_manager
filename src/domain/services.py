@@ -19,8 +19,9 @@ from .exceptions import (
 class AlertService:
     """Servicio de dominio para gestión de alertas"""
     
-    def __init__(self, repository: AlertRepository):
+    def __init__(self, repository: AlertRepository, data_source_repository: Optional[DataSourceRepository] = None):
         self._repository = repository
+        self._data_source_repository = data_source_repository
     
     def create_alert(
         self,
@@ -54,14 +55,25 @@ class AlertService:
         Raises:
             InvalidAlertDataException: Si los datos son inválidos
             DuplicateAlertException: Si ya existe una alerta similar
-            InvalidAlertLevelException: Si el nivel es inválido
         """
+        # Validar título
+        if not title or len(title.strip()) < 3:
+            raise InvalidAlertDataException("title", title, "El título debe tener al menos 3 caracteres")
+        
+        # Validar descripción
+        if not description or len(description.strip()) < 5:
+            raise InvalidAlertDataException("description", description, "La descripción debe tener al menos 5 caracteres")
+        
+        # Validar región
+        if not region or len(region.strip()) < 2:
+            raise InvalidAlertDataException("region", region, "La región debe tener al menos 2 caracteres")
         
         # Validar nivel
         try:
             alert_level = AlertLevel(level.lower())
         except ValueError:
-            raise InvalidAlertLevelException(level)
+            valid_levels = [l.value for l in AlertLevel]
+            raise InvalidAlertDataException("level", level, f"Niveles válidos: {valid_levels}")
         
         # Validar tipo
         try:
@@ -70,18 +82,23 @@ class AlertService:
             valid_types = [t.value for t in AlertType]
             raise InvalidAlertDataException("type", type, f"Tipos válidos: {valid_types}")
         
-        # Validar datos obligatorios
-        self._validate_required_fields(title, description, region)
-        
         # Validar coordenadas si se proporcionan
-        self._validate_coordinates(latitude, longitude)
+        if latitude is not None and not (-90 <= latitude <= 90):
+            raise InvalidAlertDataException("latitude", latitude, "La latitud debe estar entre -90 y 90")
+        
+        if longitude is not None and not (-180 <= longitude <= 180):
+            raise InvalidAlertDataException("longitude", longitude, "La longitud debe estar entre -180 y 180")
         
         # Validar fecha de expiración
-        self._validate_expiration_date(expires_at)
+        if expires_at and expires_at <= datetime.utcnow():
+            raise InvalidAlertDataException("expires_at", expires_at, "La fecha de expiración debe ser futura")
         
-        # Verificar duplicados (regla de negocio)
-        if self._repository.exists_by_title_and_region(title.strip(), region.strip()):
-            raise DuplicateAlertException(title.strip(), region.strip())
+        # Verificar duplicados (alertas similares en la misma región)
+        existing_alerts = self._repository.find_by_title_and_region(title.strip(), region.strip())
+        if existing_alerts:
+            active_duplicate = next((a for a in existing_alerts if a.status == AlertStatus.ACTIVE), None)
+            if active_duplicate:
+                raise DuplicateAlertException(title, region)
         
         # Crear la alerta
         alert = Alert(
@@ -96,14 +113,15 @@ class AlertService:
             expires_at=expires_at,
             latitude=latitude,
             longitude=longitude,
-            source=source
+            source=source.strip() if source else None,
+            extra_data={}
         )
         
         return self._repository.save(alert)
     
     def get_alert_by_id(self, alert_id: int) -> Alert:
         """
-        Obtiene una alerta por ID
+        Obtiene una alerta por su ID
         
         Args:
             alert_id: ID de la alerta
@@ -114,9 +132,6 @@ class AlertService:
         Raises:
             AlertNotFoundException: Si la alerta no existe
         """
-        if alert_id <= 0:
-            raise InvalidAlertDataException("alert_id", str(alert_id), "ID debe ser positivo")
-            
         alert = self._repository.find_by_id(alert_id)
         if not alert:
             raise AlertNotFoundException(alert_id)
@@ -132,12 +147,53 @@ class AlertService:
         Returns:
             List[Alert]: Lista de alertas
         """
-        alerts = self._repository.find_all(filter)
+        if filter:
+            return self._repository.find_by_filter(filter)
+        else:
+            return self._repository.find_all()
+    
+    def get_filtered_alerts(self, filter: AlertFilter) -> List[Alert]:
+        """
+        Obtiene alertas aplicando filtros específicos
         
-        # Aplicar lógica de negocio: marcar alertas expiradas como inactivas
-        self._process_expired_alerts(alerts)
+        Args:
+            filter: Filtros a aplicar
+            
+        Returns:
+            List[Alert]: Lista de alertas filtradas
+        """
+        return self._repository.find_by_filter(filter)
+    
+    def process_expired_alerts(self) -> int:
+        """
+        Procesa alertas expiradas y las marca como resueltas
         
-        return alerts
+        Returns:
+            int: Número de alertas procesadas
+        """
+        expired_count = 0
+        try:
+            # Obtener alertas activas que han expirado
+            all_active_alerts = self._repository.find_by_status(AlertStatus.ACTIVE)
+            now = datetime.utcnow()
+            
+            for alert in all_active_alerts:
+                if alert.expires_at and alert.expires_at <= now:
+                    # Marcar como resuelta por expiración
+                    alert.status = AlertStatus.RESOLVED
+                    alert.extra_data = alert.extra_data or {}
+                    alert.extra_data['resolved_reason'] = 'expired'
+                    alert.extra_data['resolved_at'] = now.isoformat()
+                    
+                    self._repository.save(alert)
+                    expired_count += 1
+            
+            return expired_count
+            
+        except Exception as e:
+            # Log del error pero no fallar completamente
+            print(f"Error processing expired alerts: {e}")
+            return expired_count
     
     def update_alert_status(self, alert_id: int, new_status: str) -> Alert:
         """
@@ -198,165 +254,97 @@ class AlertService:
             alert_id: ID de la alerta
             
         Returns:
-            bool: True si se eliminó, False si no existía
+            bool: True si se eliminó correctamente
+            
+        Raises:
+            AlertNotFoundException: Si la alerta no existe
         """
-        # Verificar que existe antes de eliminar
-        self.get_alert_by_id(alert_id)
-        return self._repository.delete(alert_id)
+        alert = self.get_alert_by_id(alert_id)
+        return self._repository.delete(alert.id)
     
-    def get_active_alerts(self, region: Optional[str] = None) -> List[Alert]:
+    def get_alerts_by_region(self, region: str) -> List[Alert]:
         """
-        Obtiene alertas activas, opcionalmente filtradas por región
+        Obtiene alertas por región
         
         Args:
-            region: Región a filtrar (opcional)
+            region: Nombre de la región
             
         Returns:
-            List[Alert]: Lista de alertas activas
+            List[Alert]: Alertas en la región
         """
-        filter = AlertFilter(active_only=True, region=region)
-        return self.get_all_alerts(filter)
+        return self._repository.find_by_region(region)
     
-    def get_critical_alerts(self) -> List[Alert]:
+    def get_alerts_by_level(self, level: AlertLevel) -> List[Alert]:
         """
-        Obtiene alertas críticas y de emergencia activas
-        
-        Returns:
-            List[Alert]: Lista de alertas críticas
-        """
-        critical_filter = AlertFilter(level=AlertLevel.CRITICAL, active_only=True)
-        emergency_filter = AlertFilter(level=AlertLevel.EMERGENCY, active_only=True)
-        
-        critical_alerts = self.get_all_alerts(critical_filter)
-        emergency_alerts = self.get_all_alerts(emergency_filter)
-        
-        # Combinar y ordenar por nivel de prioridad
-        all_critical = critical_alerts + emergency_alerts
-        return sorted(all_critical, key=lambda a: a.level.get_priority(), reverse=True)
-    
-    def get_alerts_by_region(self, region: str, active_only: bool = False) -> List[Alert]:
-        """
-        Obtiene alertas de una región específica
+        Obtiene alertas por nivel de severidad
         
         Args:
-            region: Región a buscar
-            active_only: Solo alertas activas
+            level: Nivel de severidad
             
         Returns:
-            List[Alert]: Lista de alertas de la región
+            List[Alert]: Alertas del nivel especificado
         """
-        if not region or not region.strip():
-            raise InvalidAlertDataException("region", region, "La región no puede estar vacía")
+        return self._repository.find_by_level(level)
+    
+    def get_active_alerts(self) -> List[Alert]:
+        """
+        Obtiene solo las alertas activas
         
-        filter = AlertFilter(region=region.strip(), active_only=active_only)
-        return self.get_all_alerts(filter)
+        Returns:
+            List[Alert]: Alertas activas
+        """
+        return self._repository.find_by_status(AlertStatus.ACTIVE)
     
     def get_alert_statistics(self) -> dict:
         """
-        Obtiene estadísticas de alertas
+        Obtiene estadísticas generales de alertas
         
         Returns:
             dict: Estadísticas del sistema
         """
-        stats = {}
+        all_alerts = self._repository.find_all()
         
-        # Contar por estado
-        for status in AlertStatus:
-            stats[f"count_{status.value}"] = self._repository.count_by_status(status)
+        stats = {
+            "total_alerts": len(all_alerts),
+            "active_alerts": len([a for a in all_alerts if a.status == AlertStatus.ACTIVE]),
+            "resolved_alerts": len([a for a in all_alerts if a.status == AlertStatus.RESOLVED]),
+            "by_level": {},
+            "by_region": {},
+            "by_type": {}
+        }
         
-        # Alertas activas por nivel
+        # Estadísticas por nivel
         for level in AlertLevel:
-            filter = AlertFilter(level=level, active_only=True)
-            alerts = self.get_all_alerts(filter)
-            stats[f"active_{level.value}"] = len(alerts)
+            stats["by_level"][level.value] = len([a for a in all_alerts if a.level == level])
         
-        # Total general
-        all_alerts = self.get_all_alerts()
-        stats["total_alerts"] = len(all_alerts)
+        # Estadísticas por región
+        regions = set(alert.region for alert in all_alerts)
+        for region in regions:
+            stats["by_region"][region] = len([a for a in all_alerts if a.region == region])
         
-        # Alertas expiradas
-        expired_alerts = self._repository.find_expired_active_alerts()
-        stats["expired_active"] = len(expired_alerts)
+        # Estadísticas por tipo
+        for alert_type in AlertType:
+            stats["by_type"][alert_type.value] = len([a for a in all_alerts if a.type == alert_type])
         
         return stats
     
-    def cleanup_expired_alerts(self) -> int:
+    def _validate_status_transition(self, current: AlertStatus, new: AlertStatus):
         """
-        Limpia alertas expiradas marcándolas como resueltas
-        
-        Returns:
-            int: Número de alertas procesadas
+        Valida las transiciones de estado permitidas
         """
-        expired_alerts = self._repository.find_expired_active_alerts()
+        # Definir transiciones válidas
+        valid_transitions = {
+            AlertStatus.PENDING: [AlertStatus.ACTIVE, AlertStatus.CANCELLED],
+            AlertStatus.ACTIVE: [AlertStatus.RESOLVED, AlertStatus.CANCELLED],
+            AlertStatus.RESOLVED: [],  # Los resueltos no pueden cambiar
+            AlertStatus.CANCELLED: []  # Los cancelados no pueden cambiar
+        }
         
-        processed = 0
-        for alert in expired_alerts:
-            try:
-                alert.status = AlertStatus.RESOLVED
-                self._repository.save(alert)
-                processed += 1
-            except Exception:
-                # Log error pero continúa con las demás
-                continue
-        
-        return processed
-    
-    # Métodos privados de validación
-    def _validate_required_fields(self, title: str, description: str, region: str):
-        """Valida campos obligatorios"""
-        if not title or not title.strip():
-            raise InvalidAlertDataException("title", title, "El título no puede estar vacío")
-        
-        if not description or not description.strip():
-            raise InvalidAlertDataException("description", description, "La descripción no puede estar vacía")
-        
-        if not region or not region.strip():
-            raise InvalidAlertDataException("region", region, "La región no puede estar vacía")
-        
-        # Validar longitudes
-        if len(title.strip()) > 255:
-            raise InvalidAlertDataException("title", title, "El título no puede exceder 255 caracteres")
-        
-        if len(description.strip()) > 5000:
-            raise InvalidAlertDataException("description", description, "La descripción no puede exceder 5000 caracteres")
-    
-    def _validate_coordinates(self, latitude: Optional[float], longitude: Optional[float]):
-        """Valida coordenadas geográficas"""
-        if latitude is not None and (latitude < -90 or latitude > 90):
-            raise InvalidAlertDataException("latitude", str(latitude), "La latitud debe estar entre -90 y 90")
-        
-        if longitude is not None and (longitude < -180 or longitude > 180):
-            raise InvalidAlertDataException("longitude", str(longitude), "La longitud debe estar entre -180 y 180")
-    
-    def _validate_expiration_date(self, expires_at: Optional[datetime]):
-        """Valida fecha de expiración"""
-        if expires_at and expires_at <= datetime.utcnow():
-            raise InvalidAlertDataException("expires_at", str(expires_at), "La fecha de expiración debe ser futura")
-    
-    def _validate_status_transition(self, current_status: AlertStatus, new_status: AlertStatus):
-        """Valida transiciones de estado permitidas"""
-        # Reglas de negocio para transiciones de estado
-        invalid_transitions = [
-            (AlertStatus.RESOLVED, AlertStatus.ACTIVE),  # No se puede reactivar una alerta resuelta
-            (AlertStatus.CANCELLED, AlertStatus.ACTIVE),  # No se puede reactivar una alerta cancelada
-        ]
-        
-        if (current_status, new_status) in invalid_transitions:
+        if new not in valid_transitions.get(current, []):
             raise InvalidAlertStatusException(
-                f"No se puede cambiar de {current_status.value} a {new_status.value}"
+                f"No se puede cambiar de {current.value} a {new.value}"
             )
-    
-    def _process_expired_alerts(self, alerts: List[Alert]):
-        """Procesa alertas expiradas en una lista"""
-        for alert in alerts:
-            if alert.is_expired() and alert.status == AlertStatus.ACTIVE:
-                # Marcar como resuelta automáticamente
-                try:
-                    alert.status = AlertStatus.RESOLVED
-                    self._repository.save(alert)
-                except Exception:
-                    # Log error pero continúa
-                    pass
+
 
 class DataSourceService:
     """Servicio para gestión de fuentes de datos automáticas"""
@@ -373,30 +361,31 @@ class DataSourceService:
         configuration: Optional[dict] = None
     ) -> DataSource:
         """
-        Crea una nueva fuente de datos
+        Crear nueva fuente de datos
         
         Args:
-            name: Nombre único de la fuente
+            name: Nombre de la fuente
             type: Tipo de fuente (weather_api, news_rss, etc.)
             url: URL de la fuente
             check_interval_minutes: Intervalo de verificación en minutos
             configuration: Configuración adicional
             
         Returns:
-            DataSource: La fuente de datos creada
+            DataSource: Fuente creada
+            
+        Raises:
+            InvalidAlertDataException: Si los datos son inválidos
         """
         # Validaciones
-        if not name or not name.strip():
-            raise InvalidAlertDataException("name", name, "El nombre no puede estar vacío")
+        if not name or len(name.strip()) < 3:
+            raise InvalidAlertDataException("name", name, "El nombre debe tener al menos 3 caracteres")
         
-        if not url or not url.strip():
-            raise InvalidAlertDataException("url", url, "La URL no puede estar vacía")
+        if not url or not url.strip().startswith(('http://', 'https://')):
+            raise InvalidAlertDataException("url", url, "La URL debe ser válida y comenzar con http:// o https://")
         
-        if check_interval_minutes < 5:
-            raise InvalidAlertDataException("check_interval_minutes", str(check_interval_minutes), 
-                                          "El intervalo mínimo es 5 minutos")
+        if check_interval_minutes < 1:
+            raise InvalidAlertDataException("check_interval_minutes", check_interval_minutes, "El intervalo debe ser mayor a 0")
         
-        from .entities import DataSourceType
         try:
             source_type = DataSourceType(type.lower())
         except ValueError:

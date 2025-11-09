@@ -34,6 +34,8 @@ class AlertType(Enum):
     SECURITY = "security"
     HEALTH = "health"
     TRAFFIC = "traffic"
+    INFRASTRUCTURE = "infrastructure"
+    FIRE = "fire"
     OTHER = "other"
 
 class DataSourceType(Enum):
