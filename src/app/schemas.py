@@ -1,114 +1,255 @@
 """
-Mappers para convertir entre entidades de dominio y modelos de base de datos - CORREGIDO
+Schemas modernos para la API - Alineados con el dominio
 """
-from typing import Optional
 from datetime import datetime
+from enum import Enum
+from typing import Optional, Dict, Any, List
 
-from ..domain.entities import Alert, AlertLevel, AlertStatus, AlertType, DataSource, DataSourceType
-from ..app.models import Alert as AlertModel, DataSource as DataSourceModel
+from pydantic import BaseModel, Field, validator
 
-class AlertMapper:
-    """Mapper para entidades Alert"""
-    
-    @staticmethod
-    def to_domain(db_alert: AlertModel) -> Alert:
-        """Convierte de modelo de BD a entidad de dominio"""
-        return Alert(
-            id=db_alert.id,
-            title=db_alert.title,
-            description=db_alert.description,
-            level=AlertLevel(db_alert.level),
-            type=AlertType(db_alert.type),
-            region=db_alert.region,
-            status=AlertStatus(db_alert.status),
-            timestamp=db_alert.timestamp,
-            expires_at=db_alert.expires_at,
-            latitude=db_alert.latitude,
-            longitude=db_alert.longitude,  
-            source=db_alert.source,
-            extra_data=db_alert.extra_data  # ← CAMBIO: metadata → extra_data
-        )
-    
-    @staticmethod
-    def to_model(domain_alert: Alert) -> AlertModel:
-        """Convierte de entidad de dominio a modelo de BD"""
-        return AlertModel(
-            id=domain_alert.id,
-            title=domain_alert.title,
-            description=domain_alert.description,
-            level=domain_alert.level.value,
-            type=domain_alert.type.value,
-            region=domain_alert.region,
-            status=domain_alert.status.value,
-            timestamp=domain_alert.timestamp,
-            expires_at=domain_alert.expires_at,
-            latitude=domain_alert.latitude,
-            longitude=domain_alert.longitude,
-            source=domain_alert.source,
-            extra_data=domain_alert.extra_data  # ← CAMBIO: metadata → extra_data
-        )
-    
-    @staticmethod
-    def update_model_from_domain(db_alert: AlertModel, domain_alert: Alert) -> AlertModel:
-        """Actualiza un modelo de BD con datos de entidad de dominio"""
-        db_alert.title = domain_alert.title
-        db_alert.description = domain_alert.description
-        db_alert.level = domain_alert.level.value
-        db_alert.type = domain_alert.type.value
-        db_alert.region = domain_alert.region
-        db_alert.status = domain_alert.status.value
-        db_alert.expires_at = domain_alert.expires_at
-        db_alert.latitude = domain_alert.latitude
-        db_alert.longitude = domain_alert.longitude
-        db_alert.source = domain_alert.source
-        db_alert.extra_data = domain_alert.extra_data  # ← CAMBIO: metadata → extra_data
-        return db_alert
+# Usar los enums del dominio
+class AlertLevelSchema(str, Enum):
+    INFO = "info"
+    WARNING = "warning"
+    CRITICAL = "critical"
+    EMERGENCY = "emergency"
 
-class DataSourceMapper:
-    """Mapper para entidades DataSource"""
+class AlertStatusSchema(str, Enum):
+    ACTIVE = "active"
+    RESOLVED = "resolved"
+    PENDING = "pending"
+    CANCELLED = "cancelled"
+
+class AlertTypeSchema(str, Enum):
+    WEATHER = "weather"
+    NATURAL_DISASTER = "natural_disaster"
+    SECURITY = "security"
+    HEALTH = "health"
+    TRAFFIC = "traffic"
+    INFRASTRUCTURE = "infrastructure"
+    FIRE = "fire"
+    OTHER = "other"
+
+class DataSourceTypeSchema(str, Enum):
+    WEATHER_API = "weather_api"
+    NEWS_RSS = "news_rss"
+    GOVERNMENT_API = "government_api"
+    SENSOR_NETWORK = "sensor_network"
+    SOCIAL_MEDIA = "social_media"
+
+# === SCHEMAS PARA ALERTAS ===
+
+class AlertCreateSchema(BaseModel):
+    """Schema para crear una nueva alerta"""
+    title: str = Field(..., min_length=1, max_length=255, description="Título de la alerta")
+    description: str = Field(..., min_length=1, max_length=5000, description="Descripción detallada")
+    level: AlertLevelSchema = Field(..., description="Nivel de severidad")
+    type: AlertTypeSchema = Field(..., description="Tipo de alerta")
+    region: str = Field(..., min_length=1, max_length=255, description="Región afectada")
+    expires_at: Optional[datetime] = Field(None, description="Fecha de expiración (opcional)")
+    latitude: Optional[float] = Field(None, ge=-90, le=90, description="Latitud (-90 a 90)")
+    longitude: Optional[float] = Field(None, ge=-180, le=180, description="Longitud (-180 a 180)")
+    source: Optional[str] = Field(None, max_length=255, description="Fuente que genera la alerta")
+    extra_data: Optional[Dict[str, Any]] = Field(None, description="Datos adicionales en JSON")
+
+    @validator('expires_at')
+    def expires_at_must_be_future(cls, v):
+        if v and v <= datetime.utcnow():
+            raise ValueError('La fecha de expiración debe ser futura')
+        return v
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "title": "Alerta de tormenta",
+                "description": "Se prevé tormenta intensa en la región",
+                "level": "warning",
+                "type": "weather",
+                "region": "Madrid",
+                "expires_at": "2024-12-31T23:59:59",
+                "latitude": 40.4168,
+                "longitude": -3.7038,
+                "source": "weather_api"
+            }
+        }
+
+class AlertUpdateSchema(BaseModel):
+    """Schema para actualizar una alerta"""
+    title: Optional[str] = Field(None, min_length=1, max_length=255)
+    description: Optional[str] = Field(None, min_length=1, max_length=5000)
+    level: Optional[AlertLevelSchema] = None
+    type: Optional[AlertTypeSchema] = None
+    region: Optional[str] = Field(None, min_length=1, max_length=255)
+    status: Optional[AlertStatusSchema] = None
+    expires_at: Optional[datetime] = None
+    latitude: Optional[float] = Field(None, ge=-90, le=90)
+    longitude: Optional[float] = Field(None, ge=-180, le=180)
+    source: Optional[str] = Field(None, max_length=255)
+    extra_data: Optional[Dict[str, Any]] = None
+
+class AlertResponseSchema(BaseModel):
+    """Schema para respuesta de alerta"""
+    id: int
+    title: str
+    description: str
+    level: AlertLevelSchema
+    type: AlertTypeSchema
+    region: str
+    status: AlertStatusSchema
+    timestamp: datetime
+    expires_at: Optional[datetime]
+    latitude: Optional[float]
+    longitude: Optional[float]
+    source: Optional[str]
+    extra_data: Optional[Dict[str, Any]]
     
-    @staticmethod
-    def to_domain(db_source: DataSourceModel) -> DataSource:
-        """Convierte de modelo de BD a entidad de dominio"""
-        return DataSource(
-            id=db_source.id,
-            name=db_source.name,
-            type=DataSourceType(db_source.type),
-            url=db_source.url,
-            is_active=db_source.is_active == "true",
-            check_interval_minutes=db_source.check_interval_minutes,
-            last_check=db_source.last_check,
-            last_success=db_source.last_success,
-            error_count=db_source.error_count,
-            config_data=db_source.config_data  # ← CAMBIO: configuration → config_data
+    # Campos calculados
+    is_active: bool
+    is_expired: bool
+    is_high_priority: bool
+
+    @classmethod
+    def from_domain(cls, alert) -> "AlertResponseSchema":
+        """Convierte una entidad de dominio a schema de respuesta"""
+        return cls(
+            id=alert.id,
+            title=alert.title,
+            description=alert.description,
+            level=alert.level.value,
+            type=alert.type.value,
+            region=alert.region,
+            status=alert.status.value,
+            timestamp=alert.timestamp,
+            expires_at=alert.expires_at,
+            latitude=alert.latitude,
+            longitude=alert.longitude,
+            source=alert.source,
+            extra_data=alert.extra_data,
+            is_active=alert.is_active(),
+            is_expired=alert.is_expired(),
+            is_high_priority=alert.is_high_priority()
         )
-    
-    @staticmethod
-    def to_model(domain_source: DataSource) -> DataSourceModel:
-        """Convierte de entidad de dominio a modelo de BD"""
-        return DataSourceModel(
-            id=domain_source.id,
-            name=domain_source.name,
-            type=domain_source.type.value,
-            url=domain_source.url,
-            is_active="true" if domain_source.is_active else "false",
-            check_interval_minutes=domain_source.check_interval_minutes,
-            last_check=domain_source.last_check,
-            last_success=domain_source.last_success,
-            error_count=domain_source.error_count,
-            config_data=domain_source.config_data  # ← CAMBIO: configuration → config_data
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "id": 1,
+                "title": "Alerta de tormenta",
+                "description": "Se prevé tormenta intensa en la región",
+                "level": "warning",
+                "type": "weather",
+                "region": "Madrid",
+                "status": "active",
+                "timestamp": "2024-11-06T10:00:00",
+                "expires_at": "2024-12-31T23:59:59",
+                "latitude": 40.4168,
+                "longitude": -3.7038,
+                "source": "weather_api",
+                "is_active": True,
+                "is_expired": False,
+                "is_high_priority": False
+            }
+        }
+
+# === SCHEMAS PARA FUENTES DE DATOS ===
+
+class DataSourceCreateSchema(BaseModel):
+    """Schema para crear fuente de datos"""
+    name: str = Field(..., min_length=1, max_length=255, description="Nombre único")
+    type: DataSourceTypeSchema = Field(..., description="Tipo de fuente")
+    url: str = Field(..., min_length=1, max_length=500, description="URL de la fuente")
+    check_interval_minutes: int = Field(60, ge=5, description="Intervalo de verificación en minutos")
+    config_data: Optional[Dict[str, Any]] = Field(None, description="Configuración adicional")
+
+class DataSourceResponseSchema(BaseModel):
+    """Schema para respuesta de fuente de datos"""
+    id: int
+    name: str
+    type: DataSourceTypeSchema
+    url: str
+    is_active: bool
+    check_interval_minutes: int
+    last_check: Optional[datetime]
+    last_success: Optional[datetime]
+    error_count: int
+    config_data: Optional[Dict[str, Any]]
+    is_healthy: bool
+
+    @classmethod
+    def from_domain(cls, data_source) -> "DataSourceResponseSchema":
+        """Convierte una entidad de dominio a schema de respuesta"""
+        return cls(
+            id=data_source.id,
+            name=data_source.name,
+            type=data_source.type.value,
+            url=data_source.url,
+            is_active=data_source.is_active,
+            check_interval_minutes=data_source.check_interval_minutes,
+            last_check=data_source.last_check,
+            last_success=data_source.last_success,
+            error_count=data_source.error_count,
+            config_data=data_source.config_data,
+            is_healthy=data_source.is_healthy()
         )
-    
-    @staticmethod
-    def update_model_from_domain(db_source: DataSourceModel, domain_source: DataSource) -> DataSourceModel:
-        """Actualiza un modelo de BD con datos de entidad de dominio"""
-        db_source.name = domain_source.name
-        db_source.type = domain_source.type.value
-        db_source.url = domain_source.url
-        db_source.is_active = "true" if domain_source.is_active else "false"
-        db_source.check_interval_minutes = domain_source.check_interval_minutes
-        db_source.last_check = domain_source.last_check
-        db_source.last_success = domain_source.last_success
-        db_source.error_count = domain_source.error_count
-        db_source.config_data = domain_source.config_data  # ← CAMBIO: configuration → config_data
-        return db_source
+
+# === SCHEMAS PARA FILTROS Y BÚSQUEDAS ===
+
+class AlertFilterSchema(BaseModel):
+    """Schema para filtros de búsqueda de alertas"""
+    level: Optional[AlertLevelSchema] = None
+    type: Optional[AlertTypeSchema] = None
+    region: Optional[str] = None
+    status: Optional[AlertStatusSchema] = None
+    active_only: bool = False
+    high_priority_only: bool = False
+    from_date: Optional[datetime] = None
+    to_date: Optional[datetime] = None
+
+# === SCHEMAS PARA RESPUESTAS GENERALES ===
+
+class HealthCheckSchema(BaseModel):
+    """Schema para health check"""
+    status: str
+    timestamp: datetime
+    database: Dict[str, Any]
+    version: str
+    environment: str
+
+class ErrorResponseSchema(BaseModel):
+    """Schema para respuestas de error"""
+    error: Dict[str, Any]
+
+class StatisticsSchema(BaseModel):
+    """Schema para estadísticas"""
+    total_alerts: int
+    count_active: int
+    count_resolved: int
+    count_pending: int
+    count_cancelled: int
+    active_info: int
+    active_warning: int
+    active_critical: int
+    active_emergency: int
+    expired_active: int
+
+# === SCHEMAS PARA PAGINACIÓN ===
+
+class PaginatedResponse(BaseModel):
+    """Schema base para respuestas paginadas"""
+    items: List[Any]
+    total: int
+    page: int
+    per_page: int
+    pages: int
+    has_next: bool
+    has_prev: bool
+
+class PaginatedAlertsResponse(BaseModel):
+    """Schema para respuesta paginada de alertas"""
+    items: List[AlertResponseSchema]
+    total: int
+    page: int
+    per_page: int
+    pages: int
+    has_next: bool
+    has_prev: bool

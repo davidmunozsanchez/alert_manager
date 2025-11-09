@@ -1,7 +1,8 @@
 """
-Router de alertas refactorizado - Usa servicios de dominio
+Router de alertas refactorizado - CORREGIDO
 """
 import sys
+import logging
 from datetime import datetime
 from typing import Optional, List
 from math import ceil
@@ -22,7 +23,11 @@ from ...domain.exceptions import (
     DuplicateAlertException, AlertExpiredException
 )
 from ...domain.entities import AlertFilter, AlertLevel, AlertStatus, AlertType
-from ...infrastructure.logging import logger, log_business_operation
+# CAMBIO: Usar logger estándar en lugar del personalizado
+from ...infrastructure.logging import get_logger
+
+# Logger para este módulo
+logger = get_logger("alerts_router")
 
 router = APIRouter(prefix="/alerts", tags=["Alerts"])
 
@@ -30,20 +35,14 @@ router = APIRouter(prefix="/alerts", tags=["Alerts"])
 # HEALTH CHECK
 # ================================
 
-@router.get("/health", response_model=HealthCheckSchema)
+@router.get("/health")
 def health_check(db: Session = Depends(get_db)):
     """
-    Health check endpoint para monitoreo
-
-    Verifica:
-    - Estado de la API
-    - Conexión a la base de datos
-    - Timestamp del check
-    - Versión del sistema
+    Health check endpoint para monitoreo - SIMPLIFICADO
     """
     health_status = {
         "status": "healthy",
-        "timestamp": datetime.utcnow(),
+        "timestamp": datetime.utcnow().isoformat(),
         "database": {"status": "unknown", "message": ""},
         "version": "1.0.0",
         "environment": "development"
@@ -62,11 +61,14 @@ def health_check(db: Session = Depends(get_db)):
             alert_count = db.execute(text("SELECT COUNT(*) FROM alerts")).scalar()
             health_status["database"]["alert_count"] = alert_count
             
+            # Log simplificado
             logger.info(
                 "Health check successful",
-                event_type="health_check",
-                database_status="connected",
-                alert_count=alert_count
+                extra={
+                    "event_type": "health_check",
+                    "database_status": "connected",
+                    "alert_count": alert_count
+                }
             )
         else:
             health_status["status"] = "degraded"
@@ -79,35 +81,112 @@ def health_check(db: Session = Depends(get_db)):
         health_status["database"]["message"] = str(e)
         health_status["database"]["error_type"] = type(e).__name__
         
+        # Log de error simplificado
         logger.error(
             f"Health check failed: {str(e)}",
-            event_type="health_check_error",
-            error_type=type(e).__name__
+            extra={
+                "event_type": "health_check_error",
+                "error_type": type(e).__name__
+            }
         )
 
     return health_status
 
 # ================================
+# ENDPOINT DE EXPIRACIÓN
+# ================================
+
+@router.post("/expire/check")
+def check_expired_alerts(
+    alert_service: AlertService = Depends(get_alert_service)
+):
+    """
+    Verificar y marcar alertas expiradas como resueltas
+    """
+    try:
+        logger.info("Starting expired alerts check")
+        
+        expired_count = alert_service.process_expired_alerts()
+        
+        result = {
+            "status": "success",
+            "timestamp": datetime.utcnow().isoformat(),
+            "expired_alerts_processed": expired_count,
+            "message": f"Processed {expired_count} expired alerts"
+        }
+        
+        logger.info(
+            f"Expired alerts check completed: {expired_count} alerts processed",
+            extra={
+                "event_type": "expired_alerts_check",
+                "expired_count": expired_count
+            }
+        )
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error checking expired alerts: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error procesando alertas expiradas: {str(e)}")
+
+@router.get("/expire/status")
+def get_expiration_status(
+    db: Session = Depends(get_db)
+):
+    """
+    Obtener estadísticas sobre alertas expiradas
+    """
+    try:
+        from sqlalchemy import text
+        
+        # Contar alertas por estado de expiración
+        now = datetime.utcnow()
+        
+        total_alerts = db.execute(text("SELECT COUNT(*) FROM alerts")).scalar()
+        active_alerts = db.execute(text("SELECT COUNT(*) FROM alerts WHERE status = 'active'")).scalar()
+        
+        # Alertas que han expirado pero siguen activas
+        expired_active = db.execute(text(
+            "SELECT COUNT(*) FROM alerts WHERE status = 'active' AND expires_at < :now"
+        ), {"now": now}).scalar()
+        
+        # Alertas que expiran pronto (próximas 24 horas)
+        from sqlalchemy import text
+        expiring_soon = db.execute(text(
+            "SELECT COUNT(*) FROM alerts WHERE status = 'active' AND expires_at > :now AND expires_at < :future"
+        ), {
+            "now": now,
+            "future": now.replace(hour=23, minute=59, second=59)  # Fin del día
+        }).scalar()
+        
+        result = {
+            "status": "success",
+            "timestamp": now.isoformat(),
+            "statistics": {
+                "total_alerts": total_alerts,
+                "active_alerts": active_alerts,
+                "expired_but_active": expired_active,
+                "expiring_today": expiring_soon
+            },
+            "needs_cleanup": expired_active > 0
+        }
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error getting expiration status: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error obteniendo estado de expiración: {str(e)}")
+
+# ================================
 # CRUD DE ALERTAS
 # ================================
 
-@router.post("/", response_model=AlertResponseSchema, status_code=status.HTTP_201_CREATED)
+@router.post("/", status_code=status.HTTP_201_CREATED)
 def create_alert(
     alert_data: AlertCreateSchema,
     alert_service: AlertService = Depends(get_alert_service)
 ):
-    """
-    Crear una nueva alerta
-
-    - **title**: Título descriptivo de la alerta
-    - **description**: Descripción detallada
-    - **level**: Nivel de severidad (info, warning, critical, emergency)
-    - **type**: Tipo de alerta (weather, security, etc.)
-    - **region**: Región afectada
-    - **expires_at**: Fecha de expiración (opcional)
-    - **latitude/longitude**: Coordenadas (opcional)
-    - **source**: Fuente que genera la alerta (opcional)
-    """
+    """Crear una nueva alerta - SIMPLIFICADO"""
     try:
         alert = alert_service.create_alert(
             title=alert_data.title,
@@ -123,22 +202,27 @@ def create_alert(
         
         logger.info(
             f"Alert created successfully: {alert.title}",
-            event_type="alert_created",
-            alert_id=alert.id,
-            level=alert.level.value,
-            region=alert.region
+            extra={
+                "event_type": "alert_created",
+                "alert_id": alert.id,
+                "level": alert.level.value,
+                "region": alert.region
+            }
         )
         
-        return AlertResponseSchema.from_domain(alert)
+        return AlertResponseSchema.from_domain(alert).dict()
         
     except (InvalidAlertDataException, DuplicateAlertException) as e:
-        logger.warning(f"Invalid alert data: {e.message}", error_code=e.error_code)
+        logger.warning(
+            f"Invalid alert data: {e.message}",
+            extra={"error_code": e.error_code}
+        )
         raise HTTPException(status_code=400, detail=e.message)
     except Exception as e:
         logger.error(f"Unexpected error creating alert: {str(e)}")
         raise HTTPException(status_code=500, detail="Error interno del servidor")
 
-@router.get("/", response_model=PaginatedAlertsResponse)
+@router.get("/")
 def get_alerts(
     page: int = Query(1, ge=1, description="Número de página"),
     per_page: int = Query(20, ge=1, le=100, description="Elementos por página"),
@@ -148,36 +232,63 @@ def get_alerts(
     status: Optional[AlertStatus] = Query(None, description="Filtrar por estado"),
     active_only: bool = Query(False, description="Solo alertas activas"),
     high_priority_only: bool = Query(False, description="Solo alertas de alta prioridad"),
-    alert_service: AlertService = Depends(get_alert_service)
+    check_expired: bool = Query(True, description="Verificar alertas expiradas antes de devolver resultados"),
+    alert_service: AlertService = Depends(get_alert_service),
+    db: Session = Depends(get_db)  # Agregar esta línea
 ):
     """
-    Obtener lista de alertas con filtros y paginación
-
-    Parámetros de filtrado:
-    - **level**: Nivel de severidad
-    - **type**: Tipo de alerta  
-    - **region**: Región (búsqueda parcial)
-    - **status**: Estado de la alerta
-    - **active_only**: Solo alertas activas y no expiradas
-    - **high_priority_only**: Solo alertas críticas y de emergencia
-
-    Paginación:
-    - **page**: Número de página (empezando en 1)
-    - **per_page**: Elementos por página (máximo 100)
+    Obtener lista de alertas con filtros y paginación - CON VERIFICACIÓN DE EXPIRACIÓN
     """
     try:
-        # Crear filtro
-        filter = AlertFilter(
-            level=level,
-            type=type,
-            region=region,
-            status=status,
-            active_only=active_only,
-            high_priority_only=high_priority_only
+        # Log del request
+        logger.info(
+            f"Getting alerts: page={page}, per_page={per_page}, level={level}",
+            extra={
+                "page": page,
+                "per_page": per_page,
+                "level": str(level) if level else None,
+                "type": str(type) if type else None,
+                "check_expired": check_expired
+            }
         )
         
-        # Obtener todas las alertas filtradas
-        all_alerts = alert_service.get_all_alerts(filter)
+        # Verificar alertas expiradas si está habilitado
+        expired_count = 0
+        if check_expired:
+            try:
+                expired_count = alert_service.process_expired_alerts()
+                if expired_count > 0:
+                    logger.info(f"Processed {expired_count} expired alerts before query")
+            except Exception as e:
+                logger.warning(f"Error processing expired alerts: {e}")
+        
+        # Crear filtro SOLO si hay valores no None
+        filter_params = {}
+        if level is not None:
+            filter_params['level'] = level
+        if type is not None:
+            filter_params['type'] = type
+        if region is not None:
+            filter_params['region'] = region
+        if status is not None:
+            filter_params['status'] = status
+        if active_only:
+            filter_params['active_only'] = active_only
+        if high_priority_only:
+            filter_params['high_priority_only'] = high_priority_only
+        
+        # Crear filtro solo si hay parámetros
+        alert_filter = AlertFilter(**filter_params) if filter_params else None
+        
+        logger.info(f"Created filter: {filter_params}")
+        
+        # Obtener alertas
+        if alert_filter:
+            all_alerts = alert_service.get_filtered_alerts(alert_filter)
+        else:
+            all_alerts = alert_service.get_all_alerts()
+        
+        logger.info(f"Found {len(all_alerts)} alerts")
         
         # Paginación manual
         total = len(all_alerts)
@@ -186,165 +297,126 @@ def get_alerts(
         end = start + per_page
         alerts_page = all_alerts[start:end]
         
-        # Convertir a schemas
-        alert_schemas = [AlertResponseSchema.from_domain(alert) for alert in alerts_page]
+        # Convertir a dict directamente para evitar problemas de schema
+        alert_dicts = []
+        for alert in alerts_page:
+            try:
+                alert_schema = AlertResponseSchema.from_domain(alert)
+                alert_dicts.append(alert_schema.dict())
+            except Exception as e:
+                logger.error(f"Error converting alert {alert.id}: {e}")
+                # Crear dict básico manualmente
+                alert_dicts.append({
+                    "id": alert.id,
+                    "title": alert.title,
+                    "description": alert.description,
+                    "level": alert.level.value if hasattr(alert.level, 'value') else str(alert.level),
+                    "type": alert.type.value if hasattr(alert.type, 'value') else str(alert.type),
+                    "region": alert.region,
+                    "status": alert.status.value if hasattr(alert.status, 'value') else str(alert.status),
+                    "timestamp": alert.timestamp.isoformat() if alert.timestamp else None,
+                    "expires_at": alert.expires_at.isoformat() if alert.expires_at else None
+                })
         
-        return PaginatedAlertsResponse(
-            items=alert_schemas,
-            total=total,
-            page=page,
-            per_page=per_page,
-            pages=pages,
-            has_next=page < pages,
-            has_prev=page > 1
-        )
+        result = {
+            "items": alert_dicts,
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+            "pages": pages,
+            "has_next": page < pages,
+            "has_prev": page > 1,
+            "expired_processed": expired_count if check_expired else None
+        }
+        
+        logger.info(f"Returning {len(alert_dicts)} alerts")
+        return result
         
     except Exception as e:
-        logger.error(f"Error getting alerts: {str(e)}")
-        raise HTTPException(status_code=500, detail="Error interno del servidor")
+        logger.error(f"Error getting alerts: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error interno del servidor: {str(e)}")
 
-@router.get("/{alert_id}", response_model=AlertResponseSchema)
+@router.get("/{alert_id}")
 def get_alert(
     alert_id: int,
     alert_service: AlertService = Depends(get_alert_service)
 ):
-    """
-    Obtener una alerta específica por ID
-    """
+    """Obtener una alerta específica por ID - SIMPLIFICADO"""
     try:
         alert = alert_service.get_alert_by_id(alert_id)
-        return AlertResponseSchema.from_domain(alert)
+        alert_schema = AlertResponseSchema.from_domain(alert)
+        return alert_schema.dict()
     except AlertNotFoundException as e:
         raise HTTPException(status_code=404, detail=e.message)
     except Exception as e:
         logger.error(f"Error getting alert {alert_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Error interno del servidor")
 
-@router.put("/{alert_id}", response_model=AlertResponseSchema)
-def update_alert(
-    alert_id: int,
-    alert_data: AlertUpdateSchema,
-    alert_service: AlertService = Depends(get_alert_service)
-):
-    """
-    Actualizar una alerta existente
-    """
-    try:
-        # Obtener alerta actual
-        alert = alert_service.get_alert_by_id(alert_id)
-        
-        # Actualizar solo campos proporcionados
-        if alert_data.title is not None:
-            alert.title = alert_data.title
-        if alert_data.description is not None:
-            alert.description = alert_data.description
-        if alert_data.level is not None:
-            from ...domain.entities import AlertLevel as DomainAlertLevel
-            alert.level = DomainAlertLevel(alert_data.level.value)
-        if alert_data.region is not None:
-            alert.region = alert_data.region
-        # ... más campos
-        
-        # Guardar cambios
-        updated_alert = alert_service._repository.save(alert)
-        
-        logger.info(
-            f"Alert updated: {alert_id}",
-            event_type="alert_updated",
-            alert_id=alert_id
-        )
-        
-        return AlertResponseSchema.from_domain(updated_alert)
-        
-    except AlertNotFoundException as e:
-        raise HTTPException(status_code=404, detail=e.message)
-    except (InvalidAlertDataException, AlertExpiredException) as e:
-        raise HTTPException(status_code=400, detail=e.message)
-    except Exception as e:
-        logger.error(f"Error updating alert {alert_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Error interno del servidor")
-
-@router.patch("/{alert_id}/resolve", response_model=AlertResponseSchema)
-def resolve_alert(
-    alert_id: int,
-    alert_service: AlertService = Depends(get_alert_service)
-):
-    """
-    Resolver una alerta (cambiar estado a 'resolved')
-    """
-    try:
-        alert = alert_service.resolve_alert(alert_id)
-        
-        logger.info(
-            f"Alert resolved: {alert_id}",
-            event_type="alert_resolved",
-            alert_id=alert_id
-        )
-        
-        return AlertResponseSchema.from_domain(alert)
-        
-    except AlertNotFoundException as e:
-        raise HTTPException(status_code=404, detail=e.message)
-    except (AlertExpiredException, InvalidAlertDataException) as e:
-        raise HTTPException(status_code=400, detail=e.message)
-    except Exception as e:
-        logger.error(f"Error resolving alert {alert_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Error interno del servidor")
-
-@router.delete("/{alert_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_alert(
-    alert_id: int,
-    alert_service: AlertService = Depends(get_alert_service)
-):
-    """
-    Eliminar una alerta
-    """
-    try:
-        success = alert_service.delete_alert(alert_id)
-        if success:
-            logger.info(f"Alert deleted: {alert_id}", event_type="alert_deleted", alert_id=alert_id)
-        return None
-    except AlertNotFoundException as e:
-        raise HTTPException(status_code=404, detail=e.message)
-    except Exception as e:
-        logger.error(f"Error deleting alert {alert_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Error interno del servidor")
-
 # ================================
 # ENDPOINTS ESPECIALES
 # ================================
 
-@router.get("/statistics/summary", response_model=StatisticsSchema)
+@router.get("/statistics/summary")
 def get_statistics(
     alert_service: AlertService = Depends(get_alert_service)
 ):
-    """
-    Obtener estadísticas generales del sistema
-    """
+    """Obtener estadísticas generales del sistema - SIMPLIFICADO"""
     try:
         stats = alert_service.get_alert_statistics()
-        return StatisticsSchema(**stats)
+        return stats  # Devolver dict directamente
     except Exception as e:
         logger.error(f"Error getting statistics: {str(e)}")
         raise HTTPException(status_code=500, detail="Error interno del servidor")
 
-@router.post("/cleanup/expired", status_code=status.HTTP_200_OK)
-def cleanup_expired_alerts(
-    alert_service: AlertService = Depends(get_alert_service)
-):
-    """
-    Limpiar alertas expiradas (marcarlas como resueltas)
-    """
+# Endpoints simplificados para debug
+@router.get("/debug/simple")
+def debug_simple():
+    """Endpoint de debug super simple"""
+    return {"status": "ok", "message": "Simple endpoint working"}
+
+@router.get("/debug/count")
+def debug_count(db: Session = Depends(get_db)):
+    """Contar alertas directamente"""
     try:
-        processed = alert_service.cleanup_expired_alerts()
-        
-        logger.info(
-            f"Expired alerts cleanup completed: {processed} processed",
-            event_type="cleanup_expired",
-            processed_count=processed
-        )
-        
-        return {"message": f"{processed} alertas expiradas procesadas"}
+        from sqlalchemy import text
+        count = db.execute(text("SELECT COUNT(*) FROM alerts")).scalar()
+        return {"count": count}
     except Exception as e:
-        logger.error(f"Error in cleanup: {str(e)}")
-        raise HTTPException(status_code=500, detail="Error interno del servidor")
+        return {"error": str(e)}
+
+@router.get("/debug/raw")
+def debug_raw_alerts(db: Session = Depends(get_db)):
+    """Ver alertas directas de BD"""
+    try:
+        from sqlalchemy import text
+        result = db.execute(text("SELECT id, title, level, region, type, status, expires_at FROM alerts LIMIT 5"))
+        alerts = []
+        for row in result:
+            alerts.append({
+                "id": row[0],
+                "title": row[1], 
+                "level": row[2],
+                "region": row[3],
+                "type": row[4],
+                "status": row[5],
+                "expires_at": str(row[6]) if row[6] else None
+            })
+        return {"alerts": alerts}
+    except Exception as e:
+        return {"error": str(e)}
+
+@router.get("/debug/types")
+def debug_alert_types(db: Session = Depends(get_db)):
+    """Ver tipos de alerta en BD"""
+    try:
+        from sqlalchemy import text
+        result = db.execute(text("SELECT DISTINCT type, COUNT(*) FROM alerts GROUP BY type ORDER BY type"))
+        types = []
+        for row in result:
+            types.append({
+                "type": row[0],
+                "count": row[1]
+            })
+        return {"types": types}
+    except Exception as e:
+        return {"error": str(e)}

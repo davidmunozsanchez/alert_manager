@@ -1,22 +1,23 @@
 import os
 import time
+import logging
 from datetime import datetime
 
-from fastapi import FastAPI, Request, Depends
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
-from loguru import logger
 
 from .routers import alerts
 from ..infrastructure.middleware import (
     RequestLoggingMiddleware,
     SecurityHeadersMiddleware, 
     HealthCheckMiddleware,
-    limiter
+    RateLimitMiddleware,
+    global_limiter
 )
+from ..infrastructure.logging import get_logger
+
+# Logger para main
+logger = get_logger("main")
 
 # Configurar entorno
 environment = os.getenv("ENVIRONMENT", "development")
@@ -29,10 +30,6 @@ app = FastAPI(
     redoc_url="/redoc" if environment == "development" else None
 )
 
-# Rate limiter global
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-
 # ================================
 # MIDDLEWARE STACK (orden importa)
 # ================================
@@ -43,10 +40,13 @@ app.add_middleware(HealthCheckMiddleware)
 # 2. Security headers
 app.add_middleware(SecurityHeadersMiddleware)
 
-# 3. Request logging (después de security)
+# 3. Rate limiting
+app.add_middleware(RateLimitMiddleware, limiter=global_limiter)
+
+# 4. Request logging
 app.add_middleware(RequestLoggingMiddleware)
 
-# 4. CORS (al final)
+# 5. CORS (al final)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"] if environment == "development" else ["https://yourdomain.com"],
@@ -63,20 +63,22 @@ app.add_middleware(
 async def startup_event():
     """Evento de inicio"""
     logger.info(
-        "🚀 Alert Manager API starting up",
-        event_type="application_startup",
-        version="1.0.0",
-        environment=environment,
-        python_version=f"{os.sys.version_info.major}.{os.sys.version_info.minor}.{os.sys.version_info.micro}",
-        features=["layered_architecture", "domain_services", "structured_logging", "rate_limiting"]
+        "Alert Manager API starting up",
+        extra={
+            "event_type": "application_startup",
+            "version": "1.0.0",
+            "environment": environment,
+            "python_version": f"{os.sys.version_info.major}.{os.sys.version_info.minor}.{os.sys.version_info.micro}",
+            "features": ["layered_architecture", "domain_services", "structured_logging", "native_rate_limiting"]
+        }
     )
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Evento de cierre"""
     logger.info(
-        "🛑 Alert Manager API shutting down",
-        event_type="application_shutdown"
+        "Alert Manager API shutting down",
+        extra={"event_type": "application_shutdown"}
     )
 
 # ================================
@@ -90,8 +92,7 @@ app.include_router(alerts.router)
 # ================================
 
 @app.get("/")
-@limiter.limit("100/minute")
-async def root(request: Request):
+async def root():
     """Endpoint raíz con información de la API"""
     return {
         "service": "Alert Manager API",
@@ -104,7 +105,7 @@ async def root(request: Request):
             "domain_driven_design",
             "clean_architecture", 
             "structured_logging",
-            "rate_limiting",
+            "native_rate_limiting",
             "input_validation",
             "error_handling"
         ],
@@ -113,6 +114,10 @@ async def root(request: Request):
             "health": "/alerts/health",
             "docs": "/docs" if environment == "development" else "disabled",
             "statistics": "/alerts/statistics/summary"
+        },
+        "rate_limit": {
+            "requests_per_minute": global_limiter.max_requests,
+            "window_seconds": global_limiter.time_window
         }
     }
 
@@ -134,6 +139,23 @@ async def version():
             "pattern": "clean_architecture",
             "layers": ["api", "domain", "infrastructure"],
             "database": "postgresql",
-            "logging": "loguru"
+            "logging": "standard_python",
+            "rate_limiting": "native_memory"
         }
+    }
+
+@app.get("/rate-limit-status")
+async def rate_limit_status(request: Request):
+    """Información del rate limiting para debug"""
+    from ..infrastructure.middleware import get_client_ip
+    
+    client_ip = get_client_ip(request)
+    remaining = global_limiter.get_remaining(client_ip)
+    
+    return {
+        "client_ip": client_ip,
+        "limit": global_limiter.max_requests,
+        "window_seconds": global_limiter.time_window,
+        "remaining": remaining,
+        "reset_at": int(time.time()) + global_limiter.time_window
     }
