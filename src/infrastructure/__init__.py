@@ -1,7 +1,6 @@
 """
 Infraestructura completa con repositories
 """
-from loguru import logger
 from .logging import (
     log_api_request, 
     log_business_operation, 
