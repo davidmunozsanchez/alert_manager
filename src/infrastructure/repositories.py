@@ -79,43 +79,7 @@ class SQLAlchemyAlertRepository(AlertRepository):
             query = self.db.query(AlertModel)
             
             if filter:
-                # Aplicar filtros
-                if filter.level:
-                    query = query.filter(AlertModel.level == filter.level.value)
-                
-                if filter.type:
-                    query = query.filter(AlertModel.type == filter.type.value)
-                
-                if filter.region:
-                    query = query.filter(AlertModel.region.ilike(f"%{filter.region}%"))
-                
-                if filter.status:
-                    query = query.filter(AlertModel.status == filter.status.value)
-                
-                if filter.from_date:
-                    query = query.filter(AlertModel.timestamp >= filter.from_date)
-                
-                if filter.to_date:
-                    query = query.filter(AlertModel.timestamp <= filter.to_date)
-                
-                if filter.active_only:
-                    query = query.filter(
-                        and_(
-                            AlertModel.status == AlertStatus.ACTIVE.value,
-                            or_(
-                                AlertModel.expires_at.is_(None),
-                                AlertModel.expires_at > datetime.utcnow()
-                            )
-                        )
-                    )
-                
-                if filter.high_priority_only:
-                    query = query.filter(
-                        AlertModel.level.in_([
-                            AlertLevel.CRITICAL.value,
-                            AlertLevel.EMERGENCY.value
-                        ])
-                    )
+                query = self._apply_filters(query, filter)
             
             # Ordenar por timestamp descendente (más recientes primero)
             query = query.order_by(AlertModel.timestamp.desc())
@@ -135,6 +99,106 @@ class SQLAlchemyAlertRepository(AlertRepository):
         except Exception as e:
             log_error(e, "find_all_alerts")
             raise
+    
+    def find_by_filter(self, filter: AlertFilter) -> List[Alert]:
+        """Busca alertas aplicando filtros específicos - método alias de find_all"""
+        return self.find_all(filter)
+    
+    def find_by_status(self, status: AlertStatus) -> List[Alert]:
+        """Busca alertas por estado específico"""
+        try:
+            db_alerts = self.db.query(AlertModel).filter(
+                AlertModel.status == status.value
+            ).order_by(AlertModel.timestamp.desc()).all()
+            
+            return [AlertMapper.to_domain(db_alert) for db_alert in db_alerts]
+            
+        except Exception as e:
+            log_error(e, "find_by_status", status=status.value)
+            raise
+    
+    def find_by_level(self, level: AlertLevel) -> List[Alert]:
+        """Busca alertas por nivel específico"""
+        try:
+            db_alerts = self.db.query(AlertModel).filter(
+                AlertModel.level == level.value
+            ).order_by(AlertModel.timestamp.desc()).all()
+            
+            return [AlertMapper.to_domain(db_alert) for db_alert in db_alerts]
+            
+        except Exception as e:
+            log_error(e, "find_by_level", level=level.value)
+            raise
+    
+    def find_by_region(self, region: str) -> List[Alert]:
+        """Busca alertas por región"""
+        try:
+            db_alerts = self.db.query(AlertModel).filter(
+                AlertModel.region.ilike(f"%{region}%")
+            ).order_by(AlertModel.timestamp.desc()).all()
+            
+            return [AlertMapper.to_domain(db_alert) for db_alert in db_alerts]
+            
+        except Exception as e:
+            log_error(e, "find_by_region", region=region)
+            raise
+    
+    def find_by_title_and_region(self, title: str, region: str) -> List[Alert]:
+        """Busca alertas por título y región (para detectar duplicados)"""
+        try:
+            db_alerts = self.db.query(AlertModel).filter(
+                and_(
+                    AlertModel.title.ilike(f"%{title}%"),
+                    AlertModel.region.ilike(f"%{region}%")
+                )
+            ).all()
+            
+            return [AlertMapper.to_domain(db_alert) for db_alert in db_alerts]
+            
+        except Exception as e:
+            log_error(e, "find_by_title_and_region", title=title, region=region)
+            raise
+    
+    def _apply_filters(self, query, filter: AlertFilter):
+        """Aplica filtros a la consulta SQL"""
+        if filter.level:
+            query = query.filter(AlertModel.level == filter.level.value)
+        
+        if filter.type:
+            query = query.filter(AlertModel.type == filter.type.value)
+        
+        if filter.region:
+            query = query.filter(AlertModel.region.ilike(f"%{filter.region}%"))
+        
+        if filter.status:
+            query = query.filter(AlertModel.status == filter.status.value)
+        
+        if filter.from_date:
+            query = query.filter(AlertModel.timestamp >= filter.from_date)
+        
+        if filter.to_date:
+            query = query.filter(AlertModel.timestamp <= filter.to_date)
+        
+        if filter.active_only:
+            query = query.filter(
+                and_(
+                    AlertModel.status == AlertStatus.ACTIVE.value,
+                    or_(
+                        AlertModel.expires_at.is_(None),
+                        AlertModel.expires_at > datetime.utcnow()
+                    )
+                )
+            )
+        
+        if filter.high_priority_only:
+            query = query.filter(
+                AlertModel.level.in_([
+                    AlertLevel.CRITICAL.value,
+                    AlertLevel.EMERGENCY.value
+                ])
+            )
+        
+        return query
     
     def delete(self, alert_id: int) -> bool:
         """Elimina una alerta"""
