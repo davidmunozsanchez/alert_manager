@@ -1,151 +1,203 @@
 """
-Sistema de logging moderno con Loguru - CORREGIDO SIN COMPRESIÓN
+Sistema de logging nativo con logger estándar de Python
 """
 import json
+import logging
+import logging.handlers
 import sys
 from datetime import datetime
 from typing import Any, Dict, Optional
 from contextvars import ContextVar
 from pathlib import Path
-
-from loguru import logger
+import os
 
 # Context variables para tracking
 request_id_var: ContextVar[Optional[str]] = ContextVar('request_id', default=None)
 user_id_var: ContextVar[Optional[str]] = ContextVar('user_id', default=None)
 
-def serialize_extra(record):
-    """Serializa campos extra para JSON"""
-    extra = record["extra"].copy()
+class ContextFilter(logging.Filter):
+    """Filtro que añade información de contexto a los logs"""
     
-    # Añadir context variables
-    request_id = request_id_var.get()
-    if request_id:
-        extra["request_id"] = request_id
+    def filter(self, record):
+        # Añadir context variables
+        record.request_id = request_id_var.get()
+        record.user_id = user_id_var.get()
+        return True
+
+class JSONFormatter(logging.Formatter):
+    """Formatter JSON personalizado"""
     
-    user_id = user_id_var.get()
-    if user_id:
-        extra["user_id"] = user_id
-    
-    return extra
+    def format(self, record):
+        log_data = {
+            "timestamp": datetime.fromtimestamp(record.created).isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+            "module": record.module,
+            "function": record.funcName,
+            "line": record.lineno,
+            "message": record.getMessage()
+        }
+        
+        # Añadir contexto
+        if hasattr(record, 'request_id') and record.request_id:
+            log_data["request_id"] = record.request_id
+        
+        if hasattr(record, 'user_id') and record.user_id:
+            log_data["user_id"] = record.user_id
+        
+        # Añadir campos extra si existen
+        for key, value in record.__dict__.items():
+            if key not in ['name', 'msg', 'args', 'levelname', 'levelno', 'pathname', 
+                          'filename', 'module', 'exc_info', 'exc_text', 'stack_info', 
+                          'lineno', 'funcName', 'created', 'msecs', 'relativeCreated', 
+                          'thread', 'threadName', 'processName', 'process', 'message', 
+                          'request_id', 'user_id']:
+                log_data[key] = value
+        
+        # Añadir excepción si existe
+        if record.exc_info:
+            log_data["exception"] = self.formatException(record.exc_info)
+        
+        return json.dumps(log_data, default=str, ensure_ascii=False)
 
 def setup_logging(environment: str = "development"):
-    """Configura Loguru según el entorno"""
-    
-    # Remover handler por defecto
-    logger.remove()
-    
-    if environment == "development":
-        # Consola colorizada para desarrollo
-        logger.add(
-            sys.stdout,
-            format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> | <level>{message}</level>",
-            level="DEBUG",
-            colorize=True,
-            backtrace=True,
-            diagnose=True
-        )
+    """Configura logging estándar según el entorno"""
     
     # Crear directorio de logs
     log_dir = Path("logs")
     log_dir.mkdir(exist_ok=True)
     
-    # Archivo JSON estructurado (SIN compresión por ahora)
-    logger.add(
-        log_dir / "alert_manager.json",
-        format=lambda record: json.dumps({
-            "timestamp": record["time"].isoformat(),
-            "level": record["level"].name,
-            "logger": record["name"],
-            "module": record["module"],
-            "function": record["function"], 
-            "line": record["line"],
-            "message": record["message"],
-            **serialize_extra(record)
-        }, default=str, ensure_ascii=False),
-        level="INFO",
-        rotation="10 MB",
-        retention="7 days"
-        # compression="gz"  ← REMOVIDO temporalmente
-    )
+    # Obtener logger raíz
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.DEBUG if environment == "development" else logging.INFO)
     
-    # Archivo solo para errores (SIN compresión)
-    logger.add(
-        log_dir / "errors.json",
-        format=lambda record: json.dumps({
-            "timestamp": record["time"].isoformat(),
-            "level": record["level"].name,
-            "message": record["message"],
-            "exception": record.get("exception"),
-            **serialize_extra(record)
-        }, default=str, ensure_ascii=False),
-        level="ERROR",
-        rotation="5 MB",
-        retention="30 days",
-        backtrace=True,
-        diagnose=True
-        # compression="gz"  ← REMOVIDO temporalmente
+    # Limpiar handlers existentes
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+    
+    # Filtro de contexto
+    context_filter = ContextFilter()
+    
+    if environment == "development":
+        # Handler de consola para desarrollo
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setLevel(logging.DEBUG)
+        console_formatter = logging.Formatter(
+            '%(asctime)s | %(levelname)-8s | %(name)s:%(funcName)s:%(lineno)d | %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        console_handler.setFormatter(console_formatter)
+        console_handler.addFilter(context_filter)
+        root_logger.addHandler(console_handler)
+    
+    # Handler JSON para archivo general
+    json_handler = logging.handlers.RotatingFileHandler(
+        log_dir / "alert_manager.json",
+        maxBytes=10*1024*1024,  # 10MB
+        backupCount=5
     )
+    json_handler.setLevel(logging.INFO)
+    json_formatter = JSONFormatter()
+    json_handler.setFormatter(json_formatter)
+    json_handler.addFilter(context_filter)
+    root_logger.addHandler(json_handler)
+    
+    # Handler solo para errores
+    error_handler = logging.handlers.RotatingFileHandler(
+        log_dir / "errors.json",
+        maxBytes=5*1024*1024,  # 5MB
+        backupCount=10
+    )
+    error_handler.setLevel(logging.ERROR)
+    error_handler.setFormatter(json_formatter)
+    error_handler.addFilter(context_filter)
+    root_logger.addHandler(error_handler)
 
-# Funciones de conveniencia (mantienen la API anterior)
+def get_logger(name: str = None) -> logging.Logger:
+    """Obtener logger con nombre específico"""
+    return logging.getLogger(name or __name__)
+
+# Logger global para el módulo
+logger = get_logger("alert_manager")
+
+# Funciones de conveniencia
 def log_api_request(method: str, path: str, status_code: int, duration_ms: float, **extra):
     """Log de API request"""
-    logger.bind(**extra).info(
+    logger.info(
         f"API {method} {path} - {status_code} ({duration_ms:.2f}ms)",
-        event_type="api_request",
-        method=method,
-        path=path,
-        status_code=status_code,
-        duration_ms=duration_ms
+        extra={
+            "event_type": "api_request",
+            "method": method,
+            "path": path,
+            "status_code": status_code,
+            "duration_ms": duration_ms,
+            **extra
+        }
     )
 
 def log_business_operation(operation: str, entity_type: str, entity_id: Optional[str] = None, **extra):
     """Log de operación de negocio"""
-    logger.bind(**extra).info(
+    logger.info(
         f"Business: {operation} {entity_type}",
-        event_type="business_operation",
-        operation=operation,
-        entity_type=entity_type,
-        entity_id=entity_id
+        extra={
+            "event_type": "business_operation",
+            "operation": operation,
+            "entity_type": entity_type,
+            "entity_id": entity_id,
+            **extra
+        }
     )
 
 def log_data_source_check(source_name: str, success: bool, alerts_created: int = 0, **extra):
     """Log de verificación de fuente de datos"""
     status = "success" if success else "failed"
-    logger.bind(**extra).info(
+    logger.info(
         f"DataSource {source_name} - {status} ({alerts_created} alerts)",
-        event_type="data_source_check",
-        source_name=source_name,
-        success=success,
-        alerts_created=alerts_created
+        extra={
+            "event_type": "data_source_check",
+            "source_name": source_name,
+            "success": success,
+            "alerts_created": alerts_created,
+            **extra
+        }
     )
 
 def log_airflow_task(dag_id: str, task_id: str, state: str, **extra):
     """Log de tarea Airflow"""
-    logger.bind(**extra).info(
+    logger.info(
         f"Airflow {dag_id}.{task_id} - {state}",
-        event_type="airflow_task",
-        dag_id=dag_id,
-        task_id=task_id,
-        state=state
+        extra={
+            "event_type": "airflow_task",
+            "dag_id": dag_id,
+            "task_id": task_id,
+            "state": state,
+            **extra
+        }
     )
 
 def log_error(error: Exception, context: str, **extra):
     """Log de error con contexto completo"""
-    logger.bind(**extra).error(
+    logger.error(
         f"Error in {context}: {str(error)}",
-        event_type="error",
-        error_type=type(error).__name__,
-        context=context
+        extra={
+            "event_type": "error",
+            "error_type": type(error).__name__,
+            "context": context,
+            **extra
+        },
+        exc_info=True
     )
 
 def log_security_event(event_type: str, description: str, **extra):
     """Log de evento de seguridad"""
-    logger.bind(**extra).warning(
+    logger.warning(
         f"Security: {event_type} - {description}",
-        event_type="security",
-        security_event_type=event_type,
-        description=description
+        extra={
+            "event_type": "security",
+            "security_event_type": event_type,
+            "description": description,
+            **extra
+        }
     )
 
 def set_request_context(request_id: str, user_id: Optional[str] = None):
@@ -159,10 +211,6 @@ def clear_request_context():
     request_id_var.set(None)
     user_id_var.set(None)
 
-# Configurar según entorno (puedes cambiarlo)
-import os
+# Configurar logging automáticamente
 environment = os.getenv("ENVIRONMENT", "development")
-
-# NO llamar setup_logging() automáticamente, mejor hacerlo manual
-if __name__ != "__main__":
-    setup_logging(environment)
+setup_logging(environment)
