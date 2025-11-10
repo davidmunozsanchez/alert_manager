@@ -425,14 +425,13 @@ def test_12_all_services_integration(web_url, db_dsn, airflow_url):
         print(f"[TEST] ✗ Web service failed: {e}")
 
     # Check Airflow (opcional)
-    if not os.getenv("SKIP_AIRFLOW_TEST"):
-        try:
+    try:
             base_url = airflow_url.replace("/health", "")
             r = requests.get(base_url, timeout=20, allow_redirects=True)
             if r.status_code in [200, 302, 401]:
                 services_status["airflow"] = True
                 print("[TEST] ✅ Airflow is operational")
-        except Exception as e:
+    except Exception as e:
             print(f"[TEST] ⚠️  Airflow check skipped: {e}")
 
     # Check Seq
