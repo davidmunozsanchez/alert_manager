@@ -19,6 +19,7 @@ from src.domain.entities import Alert, AlertLevel, AlertStatus, AlertType
 from src.domain.services import AlertService
 from src.infrastructure.repositories import SQLAlchemyAlertRepository
 from src.infrastructure.mappers import AlertMapper
+from src.domain.exceptions import DuplicateAlertException
 
 @pytest.fixture
 def test_db():
@@ -172,17 +173,20 @@ class TestAlertBusinessRules:
         assert alert.is_expired()
 
     def test_duplicate_alert_detection(self, alert_service, sample_alert_data):
-        """Test detección de alertas duplicadas"""
+        """Test detección de alertas duplicadas - CORREGIDO"""
         # Crear primera alerta
         alert1 = alert_service.create_alert(**sample_alert_data)
-        
-        # Intentar crear alerta duplicada
-        alert2 = alert_service.create_alert(**sample_alert_data)
-        
-        # Deben ser diferentes objetos pero contenido similar
-        assert alert1.id != alert2.id
-        assert alert1.title == alert2.title
 
+        # Intentar crear alerta duplicada debe lanzar excepción
+        with pytest.raises(DuplicateAlertException):
+            alert_service.create_alert(**sample_alert_data)
+
+        # Verificar que solo existe una alerta
+        all_alerts = alert_service.get_all_alerts()
+        alerts_with_same_title = [a for a in all_alerts if a.title == sample_alert_data["title"]]
+        assert len(alerts_with_same_title) == 1
+    
+       
     def test_alert_statistics(self, alert_service, sample_alert_data):
         """Test estadísticas básicas de alertas"""
         # Crear varias alertas con diferentes niveles
