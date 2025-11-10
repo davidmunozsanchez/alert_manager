@@ -1,6 +1,25 @@
 version: "3.9"
 
 services:
+  # 🔥 SEQ - Plataforma centralizada de logs (PRIMERO)
+  seq:
+    image: datalust/seq:2024.3
+    container_name: seq_logs
+    ports:
+      - "5341:80"  # 🌟 Interfaz web principal
+    environment:
+      ACCEPT_EULA: "Y"
+      SEQ_FIRSTRUN_ADMINPASSWORDHASH: "${SEQ_ADMIN_PASSWORD_HASH:-}"
+    volumes:
+      - seq-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:80/ || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 90s
+
   # Base de datos principal para alertas
   db:
     image: postgres:15
@@ -28,6 +47,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      seq:
+        condition: service_started
     ports:
       - "8000:8000"
     environment:
@@ -40,25 +61,37 @@ services:
       PYTHONPATH: /app/src
       LOG_LEVEL: ${LOG_LEVEL:-info}
       DISABLE_AUTH: ${DISABLE_AUTH:-false}
-
+      SEQ_URL: http://seq:80  # 🎯 CLAVE: Usar puerto 80 interno de Seq
+      ENVIRONMENT: ${ENVIRONMENT:-development}
     volumes:
       - ../src:/app/src:cached
       - ../tests:/app/tests:cached
+      - ../logs:/app/logs
     working_dir: /app
     command: >
       sh -c "
+        echo '🔥 Starting Alert Manager with Seq logging...' &&
+        echo 'SEQ_URL configurado: $SEQ_URL' &&
         echo 'Waiting for database...' &&
         python src/app/wait_db.py &&
+        echo 'Waiting for Seq...' &&
+        sleep 30 &&
+        echo 'Testing Seq connectivity on internal port...' &&
+        curl -f http://seq:80/ -w 'Seq HTTP Status: %{http_code}\\n' || echo 'Seq not responding on port 80' &&
+        curl -X POST http://seq:80/api/events/raw \
+          -H 'Content-Type: application/vnd.serilog.clef' \
+          -d '{\"@t\":\"'$$(date -u +%Y-%m-%dT%H:%M:%S.000Z)'\",\"@l\":\"Information\",\"@mt\":\"🚀 API starting up - Seq connectivity test\",\"Component\":\"api-startup\"}' \
+          -w 'Seq API Test HTTP Status: %{http_code}\\n' || echo 'Failed to send test log to Seq API' &&
         echo 'Starting API server...' &&
         uvicorn src.app.main:app --host 0.0.0.0 --port 8000 --reload
       "
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/alerts/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 90s
 
   # Base de datos de Airflow
   airflow-db:
@@ -162,6 +195,59 @@ services:
     command: scheduler
     restart: on-failure
 
+  # 🔍 Log Tester - Para verificar Seq correctamente
+  log-tester:
+    image: curlimages/curl:latest
+    container_name: log_tester
+    depends_on:
+      seq:
+        condition: service_started
+    command: >
+      sh -c "
+        echo 'Esperando a que Seq esté listo...' &&
+        sleep 60 &&
+        echo 'Probando Seq en puerto interno 80...' &&
+        curl -f http://seq:80/ -w 'Seq Web HTTP Status: %{http_code}\\n' || echo 'Seq web no responde' &&
+        echo 'Enviando logs de prueba a Seq API...' &&
+        while true; do
+          TIMESTAMP=$$(date -u +%Y-%m-%dT%H:%M:%S.000Z) &&
+          curl -X POST http://seq:80/api/events/raw \
+            -H 'Content-Type: application/vnd.serilog.clef' \
+            -d '{\"@t\":\"'$$TIMESTAMP'\",\"@l\":\"Information\",\"@mt\":\"🔥 Test log from container - Seq is working!\",\"Component\":\"log-tester\",\"Status\":\"healthy\",\"TestId\":\"'$$(date +%s)'\"}' \
+            -w 'HTTP Status: %{http_code}\\n' || echo 'Failed to send test log' &&
+          sleep 30
+        done
+      "
+    restart: unless-stopped
+
+  # 📊 Dozzle - Para logs de contenedores Docker (complementario)
+  dozzle:
+    container_name: dozzle
+    image: amir20/dozzle:latest
+    volumes:
+      - //var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "8888:8080"
+    environment:
+      DOZZLE_LEVEL: info
+      DOZZLE_TAILSIZE: "300"
+      DOZZLE_FILTER: "status=running"
+    restart: unless-stopped
+
+  # 📁 File Browser - Para navegar archivos de logs (backup)
+  filebrowser:
+    image: filebrowser/filebrowser:latest
+    container_name: log_filebrowser
+    ports:
+      - "8081:80"
+    volumes:
+      - ../logs:/srv/logs:ro
+      - ./logs:/srv/airflow-logs:ro
+    environment:
+      FB_BASEURL: "/logs"
+    restart: unless-stopped
+
 volumes:
   pgdata:
   airflow_pgdata:
+  seq-data:

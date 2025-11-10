@@ -1,71 +1,10 @@
-# name: Docker Integration Tests
-
-# on:
-#   push:
-#     branches: [ "main", "hito2" ]
-#   pull_request:
-#     branches: [ "main", "hito2" ]
-
-# jobs:
-#   test:
-#     runs-on: ubuntu-latest
-
-#     steps:
-#       - name: Checkout del Código
-#         uses: actions/checkout@v3
-
-#       # - name: Instalar Docker Compose
-#       #   # Esta action garantiza que Docker y Docker Compose están instalados y listos.
-#       #   uses: docker/setup-compose-action@v1
-
-#       - name: Set up Python 3.11
-#         uses: actions/setup-python@v4
-#         with:
-#           python-version: '3.11'
-
-#       - name: Install Poetry
-#         uses: snok/install-poetry@v1
-
-#       - name: Install dependencies (incluyendo tests)
-#         # Asegúrate de que pytest, requests, sqlalchemy, y psycopg2-binary estén en tus dependencias
-#         run: poetry install
-
-#       - name: Levantar Contenedores con Docker Compose
-#         # Usamos -f para especificar la ruta al docker-compose.yml
-#         # Usamos -d para ejecutar en segundo plano (detached)
-#         # Usamos --build para reconstruir la imagen 'web' si es necesario
-#         run: docker compose -f docker/docker-compose.yml up -d --build
-
-#       - name: Show Docker logs
-#         if: always()
-#         run: |
-#           echo "--- Docker PS Status ---"
-#           docker ps
-#           echo "--- Docker Compose Logs ---"
-#           # Mostrar logs detallados si algo falló
-#           docker compose -f docker/docker-compose.yml logs
-
-#       - name: Run Integration Tests
-#         # Los tests (como test_integration.py) ahora pueden usar 'localhost' para esperar y probar los servicios.
-#         run: |
-#           poetry run pytest -v tests/test_container.py
-
-
-
-
-#       - name: Cleanup Docker
-#         if: always()
-#         # Detiene y elimina contenedores, redes y volúmenes (-v)
-#         run: |
-#           docker-compose -f docker/docker-compose.yml down -v
-
 name: Docker Integration Tests
 
 on:
   push:
-    branches: [ "main", "hito2" ]
+    branches: [ "main", "hito3" ]
   pull_request:
-    branches: [ "main", "hito2" ]
+    branches: [ "main", "hito3" ]
 
 jobs:
   lint:
@@ -119,15 +58,46 @@ jobs:
           poetry run pylint src/ --disable=C0111,C0103,R0903 --max-line-length=127
         continue-on-error: true
 
-      # - name: Check code formatting with Black
-      #   run: |
-      #     echo "Checking code formatting..."
-      #     black --check --diff src/ tests/
-      #   continue-on-error: false
-
-  test_docker_integration:
+  # Nuevos tests unitarios (no necesitan Docker)
+  unit_tests:
+    name: Unit tests (API, logging, middleware, pydantic)
     runs-on: ubuntu-latest
     needs: lint
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+
+      - name: Install dependencies
+        run: poetry install
+
+      - name: Run unit tests
+        env:
+          # Evitar tests que dependan de servicios externos aquí
+          SKIP_AIRFLOW_TEST: "1"
+        run: |
+          poetry run pytest -v \
+            tests/test_endpoints.py \
+            tests/test_logging.py \
+            tests/test_middleware.py \
+            tests/test_pydantic.py
+
+  # Tests de integración con Docker (incluye los nuevos tests añadidos en test_container.py)
+  test_docker_integration:
+    name: Docker integration tests (containers)
+    runs-on: ubuntu-latest
+    needs: lint
+    env:
+      CI: "1"                 # activa esperas extendidas en tests
+      SKIP_AIRFLOW_TEST: "1"  # evita probar UI de Airflow aquí para mayor estabilidad
     steps:
       - name: Checkout del Código
         uses: actions/checkout@v4
@@ -148,8 +118,8 @@ jobs:
           docker --version
           docker compose version
 
-      - name: Run Integration Tests (pytest-docker gestiona docker compose)
-        run: poetry run pytest -v tests/test_container.py
+      - name: Run integration tests (containers)
+        run: poetry run pytest -v tests/test_container.py -s
 
       - name: Show Docker logs on failure
         if: failure()
@@ -165,6 +135,7 @@ jobs:
         if: always()
         run: docker compose -f docker/docker-compose.yml down -v --remove-orphans
 
+  # Tests de DAGs (sin levantar toda la pila de Docker)
   test_dags:
     runs-on: ubuntu-latest
     needs: lint
@@ -187,7 +158,8 @@ jobs:
       - name: Run DAG Tests
         run: poetry run pytest -v tests/test_dags.py
 
-  test_crud:  # ← NUEVO JOB
+  # Tests CRUD existentes (se mantienen)
+  test_crud:
     name: CRUD Unit Tests
     runs-on: ubuntu-latest
     needs: lint
