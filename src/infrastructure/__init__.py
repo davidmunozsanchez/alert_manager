@@ -23,15 +23,20 @@ try:
         RequestLoggingMiddleware, 
         SecurityHeadersMiddleware, 
         HealthCheckMiddleware,
-        limiter
+        RateLimitMiddleware,
+        global_limiter
     )
     middleware_available = True
+    # Alias para compatibilidad
+    limiter = global_limiter
 except ImportError as e:
     print(f"⚠️  Middleware no disponible: {e}")
     middleware_available = False
     RequestLoggingMiddleware = None
     SecurityHeadersMiddleware = None
     HealthCheckMiddleware = None
+    RateLimitMiddleware = None
+    global_limiter = None
     limiter = None
 
 __all__ = [
@@ -60,5 +65,7 @@ if middleware_available:
         "RequestLoggingMiddleware",
         "SecurityHeadersMiddleware", 
         "HealthCheckMiddleware",
+        "RateLimitMiddleware",
+        "global_limiter",
         "limiter",
     ])

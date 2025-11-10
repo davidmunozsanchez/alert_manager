@@ -72,6 +72,20 @@ async def startup_event():
             "features": ["layered_architecture", "domain_services", "structured_logging", "native_rate_limiting"]
         }
     )
+    
+    # Inicializar base de datos
+    try:
+        from .database import engine, Base, wait_for_postgres
+        
+        logger.info("Waiting for PostgreSQL to be ready...")
+        if wait_for_postgres():
+            logger.info("Creating database tables...")
+            Base.metadata.create_all(bind=engine)
+            logger.info("✅ Database tables created successfully")
+        else:
+            logger.error("❌ Failed to connect to PostgreSQL")
+    except Exception as e:
+        logger.error(f"❌ Database initialization failed: {e}")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -98,64 +112,135 @@ async def root():
         "service": "Alert Manager API",
         "version": "1.0.0",
         "status": "running",
-        "environment": environment,
         "timestamp": datetime.utcnow().isoformat(),
-        "architecture": "layered_microservice",
-        "features": [
-            "domain_driven_design",
-            "clean_architecture", 
-            "structured_logging",
-            "native_rate_limiting",
-            "input_validation",
-            "error_handling"
-        ],
-        "endpoints": {
-            "alerts": "/alerts",
-            "health": "/alerts/health",
-            "docs": "/docs" if environment == "development" else "disabled",
-            "statistics": "/alerts/statistics/summary"
-        },
-        "rate_limit": {
-            "requests_per_minute": global_limiter.max_requests,
-            "window_seconds": global_limiter.time_window
-        }
+        "environment": environment,
+        "health_check": "/alerts/health"
     }
 
 @app.get("/ping")
 async def ping():
-    """Ping simple para load balancers"""
-    return {"ping": "pong", "timestamp": time.time()}
-
-@app.get("/version")
-async def version():
-    """Información de versión detallada"""
+    """Endpoint de ping simple para verificar que el servicio responde"""
     return {
+        "status": "healthy",
         "service": "alert_manager",
-        "version": "1.0.0",
-        "build": "hito3",
-        "environment": environment,
-        "python_version": f"{os.sys.version_info.major}.{os.sys.version_info.minor}.{os.sys.version_info.micro}",
-        "architecture": {
-            "pattern": "clean_architecture",
-            "layers": ["api", "domain", "infrastructure"],
-            "database": "postgresql",
-            "logging": "standard_python",
-            "rate_limiting": "native_memory"
-        }
+        "timestamp": datetime.utcnow().isoformat(),
+        "environment": environment
     }
 
-@app.get("/rate-limit-status")
-async def rate_limit_status(request: Request):
-    """Información del rate limiting para debug"""
-    from ..infrastructure.middleware import get_client_ip
+@app.get("/debug/simple")
+async def debug_simple():
+    """Endpoint de debug simple"""
+    return {
+        "debug": True,
+        "message": "Debug endpoint working",
+        "timestamp": datetime.utcnow().isoformat(),
+        "environment": environment,
+        "process_id": os.getpid(),
+        "memory_usage": "unknown"  # Placeholder
+    }
+
+@app.get("/debug/headers")
+async def debug_headers(request: Request):
+    """Endpoint para debug de headers"""
+    return {
+        "debug": True,
+        "headers": dict(request.headers),
+        "method": request.method,
+        "url": str(request.url),
+        "client": request.client.host if request.client else None,
+        "timestamp": datetime.utcnow().isoformat()
+    }
+@app.get("/test-logs")
+async def test_logs():
+    """Endpoint específico para probar logs en Seq"""
+    test_id = int(time.time())
     
-    client_ip = get_client_ip(request)
-    remaining = global_limiter.get_remaining(client_ip)
+    # Log de información
+    logger.info("🧪 Test log INFO level", extra={
+        "test_id": test_id,
+        "log_level": "info",
+        "endpoint": "/test-logs"
+    })
+    
+    # Log de warning
+    logger.warning("⚠️ Test log WARNING level", extra={
+        "test_id": test_id,
+        "log_level": "warning",
+        "endpoint": "/test-logs"
+    })
+    
+    # Log de error (para pruebas)
+    logger.error("❌ Test log ERROR level", extra={
+        "test_id": test_id,
+        "log_level": "error",
+        "endpoint": "/test-logs"
+    })
     
     return {
-        "client_ip": client_ip,
-        "limit": global_limiter.max_requests,
-        "window_seconds": global_limiter.time_window,
-        "remaining": remaining,
-        "reset_at": int(time.time()) + global_limiter.time_window
+        "message": "Logs de prueba enviados",
+        "test_id": test_id,
+        "timestamp": datetime.utcnow().isoformat(),
+        "seq_url": os.getenv("SEQ_URL", "No configurado")
     }
+@app.get("/debug/env")
+async def debug_env():
+    """Endpoint para debug de variables de entorno (solo desarrollo)"""
+    if environment != "development":
+        return {"error": "Debug endpoint only available in development"}
+    
+    safe_vars = {
+        key: value for key, value in os.environ.items()
+        if not any(secret in key.upper() for secret in ['PASSWORD', 'SECRET', 'KEY', 'TOKEN'])
+    }
+    
+    return {
+        "debug": True,
+        "environment_variables": safe_vars,
+        "timestamp": datetime.utcnow().isoformat()
+    }
+
+# ================================
+# MANEJO DE ERRORES GLOBAL
+# ================================
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Manejo global de excepciones"""
+    logger.error(
+        f"Unhandled exception in {request.method} {request.url.path}",
+        extra={
+            "event_type": "unhandled_exception",
+            "method": request.method,
+            "path": request.url.path,
+            "error_type": type(exc).__name__,
+            "error_message": str(exc)
+        },
+        exc_info=True
+    )
+    
+    if environment == "development":
+        return {
+            "error": "Internal server error",
+            "detail": str(exc),
+            "type": type(exc).__name__,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    else:
+        return {
+            "error": "Internal server error",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+# ================================
+# INFORMACIÓN DE LA APLICACIÓN
+# ================================
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=environment == "development",
+        log_level="debug" if environment == "development" else "info"
+    )
