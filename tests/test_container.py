@@ -323,7 +323,7 @@ def test_09_web_service_basic_api(web_url):
         print(f"[TEST] ⚠️  API test skipped: {e}")
 
 
-@pytest.mark.skipif(os.getenv("SKIP_AIRFLOW_TEST"), reason="Airflow test skipped")
+# @pytest.mark.skipif(os.getenv("SKIP_AIRFLOW_TEST"), reason="Airflow test skipped")
 def test_10_airflow_webserver_health(wait_for, airflow_url):
     """Test that Airflow webserver is accessible and healthy"""
     print(f"\n[TEST] Testing Airflow webserver: {airflow_url}")
@@ -331,7 +331,7 @@ def test_10_airflow_webserver_health(wait_for, airflow_url):
     # En CI, dar más tiempo inicial
     if os.getenv("CI"):
         print("[TEST] Running in CI, waiting 60s before checking...")
-        time.sleep(90)
+        time.sleep(60)
 
     def is_airflow_ready():
         try:
