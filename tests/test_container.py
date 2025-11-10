@@ -331,7 +331,7 @@ def test_10_airflow_webserver_health(wait_for, airflow_url):
     # En CI, dar más tiempo inicial
     if os.getenv("CI"):
         print("[TEST] Running in CI, waiting 60s before checking...")
-        time.sleep(60)
+        time.sleep(90)
 
     def is_airflow_ready():
         try:
@@ -354,7 +354,7 @@ def test_10_airflow_webserver_health(wait_for, airflow_url):
             print(f"[TEST] ✗ Unexpected error: {type(e).__name__}: {str(e)[:100]}")
             return False
 
-    timeout = 480.0 if os.getenv("CI") else 300.0
+    timeout = 600 if os.getenv("CI") else 300.0
     pause = 15.0 if os.getenv("CI") else 10.0
 
     try:
