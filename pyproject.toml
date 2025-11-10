@@ -8,7 +8,7 @@ packages = [{include = "src"}]
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.13"
-# Mover estas dependencias aquí desde dev.dependencies:
+# Mantener SQLAlchemy compatible con Airflow
 sqlalchemy = ">=1.4.36,<2.0"
 psycopg2-binary = "^2.9.9"
 uvicorn = {extras = ["standard"], version = "^0.24.0"}

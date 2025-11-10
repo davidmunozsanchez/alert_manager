@@ -5,11 +5,17 @@ import json
 import logging
 import logging.handlers
 import sys
+import urllib.request
+import urllib.parse
+import urllib.error
 from datetime import datetime
 from typing import Any, Dict, Optional
 from contextvars import ContextVar
 from pathlib import Path
 import os
+import threading
+import queue
+import time
 
 # Context variables para tracking
 request_id_var: ContextVar[Optional[str]] = ContextVar('request_id', default=None)
@@ -59,6 +65,156 @@ class JSONFormatter(logging.Formatter):
             log_data["exception"] = self.formatException(record.exc_info)
         
         return json.dumps(log_data, default=str, ensure_ascii=False)
+
+class SeqCLEFFormatter(logging.Formatter):
+    """Formatter CLEF para Seq"""
+    
+    def format(self, record):
+        # Convertir timestamp a formato UTC ISO 8601 con Z
+        timestamp = datetime.fromtimestamp(record.created).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+        
+        # Mapear niveles de Python a Seq
+        level_map = {
+            'DEBUG': 'Debug',
+            'INFO': 'Information',
+            'WARNING': 'Warning',
+            'ERROR': 'Error',
+            'CRITICAL': 'Fatal'
+        }
+        
+        clef_entry = {
+            "@t": timestamp,
+            "@l": level_map.get(record.levelname, record.levelname),
+            "@mt": record.getMessage(),
+            "Logger": record.name,
+            "Module": record.module,
+            "Function": record.funcName,
+            "Line": record.lineno,
+            "Thread": record.thread
+        }
+        
+        # Añadir contexto
+        if hasattr(record, 'request_id') and record.request_id:
+            clef_entry["RequestId"] = record.request_id
+        
+        if hasattr(record, 'user_id') and record.user_id:
+            clef_entry["UserId"] = record.user_id
+        
+        # Añadir campos extra
+        for key, value in record.__dict__.items():
+            if key not in ['name', 'msg', 'args', 'levelname', 'levelno', 'pathname', 
+                          'filename', 'module', 'exc_info', 'exc_text', 'stack_info', 
+                          'lineno', 'funcName', 'created', 'msecs', 'relativeCreated', 
+                          'thread', 'threadName', 'processName', 'process', 'message',
+                          'request_id', 'user_id']:
+                # Capitalizar primera letra para seguir convenciones de Seq
+                seq_key = key.replace('_', '').title() if '_' in key else key.capitalize()
+                clef_entry[seq_key] = value
+        
+        # Añadir excepción si existe
+        if record.exc_info:
+            clef_entry["Exception"] = self.formatException(record.exc_info)
+        
+        return json.dumps(clef_entry, default=str, separators=(',', ':'))
+
+class SeqHTTPHandler(logging.Handler):
+    """Handler que envía logs a Seq via HTTP"""
+    
+    def __init__(self, seq_url: str, batch_size: int = 50, flush_interval: float = 5.0):
+        super().__init__()
+        self.seq_url = seq_url.rstrip('/')
+        self.api_url = f"{self.seq_url}/api/events/raw"
+        self.batch_size = batch_size
+        self.flush_interval = flush_interval
+        self.buffer = queue.Queue()
+        self.shutdown_event = threading.Event()
+        
+        # Iniciar hilo de procesamiento
+        self.worker_thread = threading.Thread(target=self._process_logs, daemon=True)
+        self.worker_thread.start()
+    
+    def emit(self, record):
+        """Envía un log record al buffer"""
+        if not self.shutdown_event.is_set():
+            try:
+                formatted = self.format(record)
+                self.buffer.put(formatted, block=False)
+            except queue.Full:
+                # Si el buffer está lleno, descarta el log más antiguo
+                try:
+                    self.buffer.get_nowait()
+                    self.buffer.put(formatted, block=False)
+                except queue.Empty:
+                    pass
+            except Exception:
+                # No imprimir errores para evitar loops infinitos
+                pass
+    
+    def _process_logs(self):
+        """Procesa logs en lotes en un hilo separado"""
+        batch = []
+        last_flush = time.time()
+        
+        while not self.shutdown_event.is_set():
+            try:
+                # Intentar obtener un log del buffer (con timeout)
+                try:
+                    log_entry = self.buffer.get(timeout=1.0)
+                    batch.append(log_entry)
+                except queue.Empty:
+                    pass
+                
+                current_time = time.time()
+                should_flush = (
+                    len(batch) >= self.batch_size or 
+                    (batch and (current_time - last_flush) >= self.flush_interval)
+                )
+                
+                if should_flush and batch:
+                    self._send_batch(batch)
+                    batch.clear()
+                    last_flush = current_time
+                    
+            except Exception:
+                # En caso de error, limpiar el lote y continuar
+                batch.clear()
+                time.sleep(1)
+        
+        # Enviar logs restantes al cerrar
+        if batch:
+            self._send_batch(batch)
+    
+    def _send_batch(self, batch):
+        """Envía un lote de logs a Seq"""
+        try:
+            # Unir logs con newlines para formato CLEF
+            payload = '\n'.join(batch).encode('utf-8')
+            
+            req = urllib.request.Request(
+                self.api_url,
+                data=payload,
+                headers={
+                    'Content-Type': 'application/vnd.serilog.clef',
+                    'Content-Length': str(len(payload))
+                }
+            )
+            
+            with urllib.request.urlopen(req, timeout=5) as response:
+                if response.status not in [200, 201, 202]:
+                    # Error pero no imprimir para evitar loops
+                    pass
+                    
+        except Exception:
+            # Error de red o Seq no disponible - fallar silenciosamente
+            # Los logs se seguirán escribiendo a archivos
+            pass
+    
+    def close(self):
+        """Cierra el handler y espera a que se procesen los logs restantes"""
+        self.shutdown_event.set()
+        if self.worker_thread.is_alive():
+            self.worker_thread.join(timeout=2.0)
+        super().close()
 
 def setup_logging(environment: str = "development"):
     """Configura logging estándar según el entorno"""
@@ -112,6 +268,31 @@ def setup_logging(environment: str = "development"):
     error_handler.setFormatter(json_formatter)
     error_handler.addFilter(context_filter)
     root_logger.addHandler(error_handler)
+    
+    # 🔥 Handler para Seq (si está configurado)
+    seq_url = os.getenv("SEQ_URL")
+    if seq_url:
+        try:
+            seq_handler = SeqHTTPHandler(seq_url)
+            seq_handler.setLevel(logging.INFO)
+            seq_handler.setFormatter(SeqCLEFFormatter())
+            seq_handler.addFilter(context_filter)
+            root_logger.addHandler(seq_handler)
+            
+            # Log de confirmación (se enviará a todos los handlers incluyendo Seq)
+            logger = logging.getLogger("alert_manager.setup")
+            logger.info("✅ Seq logging configurado correctamente", extra={
+                "seq_url": seq_url,
+                "event_type": "logging_setup"
+            })
+            
+        except Exception as e:
+            # Si falla Seq, continuar con logging local
+            logger = logging.getLogger("alert_manager.setup")
+            logger.warning(f"⚠️ No se pudo configurar Seq logging: {e}", extra={
+                "seq_url": seq_url,
+                "event_type": "logging_setup_warning"
+            })
 
 def get_logger(name: str = None) -> logging.Logger:
     """Obtener logger con nombre específico"""
