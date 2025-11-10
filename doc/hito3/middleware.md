@@ -65,10 +65,4 @@ Diferencia entre:
 ## Configuración
 - **Rate limit**: 100 requests por 60 segundos por defecto
 - **Endpoints excluidos**: `/health`, `/ping`, `/docs`, `/redoc`, `/openapi.json`
-- **Headers de seguridad**: configuración moderna pero compatible
-
-## Ventajas del enfoque estándar
-- **Sin dependencias**: solo librerías incluidas en Python
-- **Rendimiento**: menos overhead que librerías externas
-- **Mantenibilidad**: código más predecible y controlable
-- **Compatibilidad**: funciona en cualquier entorno Python estándar
+- **Headers de seguridad**: configuración moderna pero compatible.

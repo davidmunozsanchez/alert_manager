@@ -31,12 +31,6 @@ Database Layer (SQLAlchemy Models / Persistence)
 | Excepciones | `src/domain/exceptions.py` | Errores de dominio tipados | `AlertNotFoundError` |
 | Logging / Middleware | `src/infrastructure/logging.py` / `src/infrastructure/middleware.py` | Observabilidad, seguridad, rate limiting | `RequestLoggingMiddleware` |
 
-Las caracterísitcas de esta arquitectura son:
-- Separación de responsabilidades.
-- Single Source of Truth para acceso a datos a través de repositorios inyectados.
-- DTOs (Pydantic) independientes de modelos ORM para evitar fugas de persistencia.
-- Excepciones de dominio manejadas de forma consistente para respuestas HTTP predecibles.
-
 A continuación, se irá detallando lo hecho para las distintas categorías que se califican:
 
 ## 1. Justificación técnica del framework (2 puntos)
@@ -77,7 +71,7 @@ Los modelos Pydantic separan claramente:
 - `AlertRead`: salida hacia el cliente
 Evitando exponer internamente detalles del ORM.
 
-Para más información sobre la infraestructura por capas, consulte:
+Para más información sobre la infraestructura por capas, consultar:
 - [Arquitectura de la aplicación](./hito3/app.md) - Modelos, esquemas y routers
 - [Dominio del negocio](./hito3/domain.md) - Servicios, repositorios y excepciones
 - [Infraestructura](./hito3/infrastructure.md) - Implementaciones concretas y persistencia
@@ -143,7 +137,7 @@ Alert Manager está diseñado como un ecosistema de microservicios especializado
 
 La infraestructura implementada incorpora health checks en servicios críticos para garantizar la disponibilidad y correcto funcionamiento del sistema, establece dependencias explícitas donde el servicio web espera que tanto la base de datos como Seq estén operativos antes de iniciarse, utiliza volúmenes persistentes (pgdata, seq-data) para asegurar la durabilidad de los datos entre reinicios de contenedores, y está diseñada con una arquitectura extensible que facilita la adición futura de microservicios adicionales como sistemas de notificaciones o módulos de autenticación sin requerir cambios significativos en la estructura existente.
 
-## 4. Testing Exhaustivo (2 puntos)
+## 4. Testing exhaustivo (2 puntos)
 
 El proyecto incluye una suite de testing exhaustiva que cubre todas las capas de la arquitectura, desde endpoints hasta infraestructura. A continuación se describe cada archivo de test y su propósito:
 
@@ -243,9 +237,41 @@ poetry run pytest --cov=src --cov-report=html -v
 Los resultados completos de testing pueden consultarse en:
 🔗 **[GitHub Actions - Latest Test Run](https://github.com/davidmunozsanchez/alert_manager/actions)**
 
+Las importantes son las que provienen de la rama main. Todos los test se han pasado y se puede consultar su función en los archivos externos.
 
 Además, para los servicios nuevos añadidos a docker-compose file, se usan credenciales por defecto o directamente se han desactivado, vayamos uno por uno:
 
+Para los endpoints de la app, se puede observar en esta captura como al principio no hay ninguna alerta, se añade una, y después hay una sola alerta:
+
+![alt text](imgs/endpoint_test.png)
+
+También se puede observar la respuesta de health cuando se llama a la API:
+
+![alt text](imgs/health.png)
+
+A continuación, se puede observar Seq:
+
+![alt text](imgs/seq.png)
+
+Dozzle:
+
+![alt text](imgs/dozzle.png)
+
+Para filebrowser, se está generando una contraseña provisional que se puede ver en los logs del contenedor, esto será cambiado en el próximo hito.
+
+![alt text](imgs/filebrowser1.png)
+
+![alt text](imgs/filebrowser2.png)
+
+También se puede acceder a Airflow con admin, admin:
+
+![alt text](imgs/airflow.png)
+
+Y por último, si llamamos a la API para generar logs de prueba, podemos verlos clasificados en Seq:
+
+![alt text](imgs/test-logs1.png)
+
+![alt text](imgs/test-logs2.png)
 
 
-
+En el próximo Hito, dado que se dispone de más tiempo, se implementará un uso real de Airflow y algunos endpoints interesantes, así como una mejor plataforma de Logs y todo lo referente a la autenticación de usuarios.

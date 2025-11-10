@@ -53,7 +53,3 @@ La infraestructura incluye utilidades específicas para testing con fixtures par
 La separación de concerns mantiene la lógica técnica apartada de la lógica de negocio con responsabilidades claras para cada componente. La testabilidad se facilita mediante implementaciones fácilmente mockeables y tests unitarios sin dependencias externas. La mantenibilidad se logra aislando cambios de base de datos de la lógica de negocio y centralizando logging y middleware.
 
 La extensibilidad permite agregar fácilmente nuevos tipos de repositorio y configurar el stack de middleware según necesidades. La observabilidad se garantiza con logging estructurado para análisis, métricas automáticas de performance y trazabilidad completa de requests.
-
-## Conclusión
-
-La capa de infraestructura del Alert Manager implementa todos los aspectos técnicos necesarios para una aplicación robusta y observable. Su diseño modular y el uso de patrones establecidos facilita el mantenimiento y la evolución del sistema, mientras que la separación clara de responsabilidades permite testing efectivo y desarrollo independiente de cada componente.

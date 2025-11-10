@@ -52,8 +52,4 @@ Los niveles de prioridad se organizan jerárquicamente, donde EMERGENCY y CRITIC
 
 Esta arquitectura de dominio proporciona ventajas significativas en términos de mantenibilidad, testabilidad y evolución del sistema. La centralización de la lógica de negocio asegura consistencia en toda la aplicación y facilita la implementación de cambios en reglas empresariales. La independencia tecnológica permite migrar entre diferentes frameworks y tecnologías sin afectar el núcleo del sistema.
 
-La expresividad del código, lograda mediante el uso del lenguaje del dominio en nombres y métodos, reduce la brecha entre los requisitos de negocio y su implementación técnica. Los contratos bien definidos entre interfaces previenen cambios disruptivos y facilitan la evolución controlada del sistema a medida que los requisitos empresariales se desarrollan y refinan.
 
-## Conclusión
-
-La capa de dominio del Alert Manager representa una implementación madura de principios de Domain-Driven Design, encapsulando efectivamente la complejidad del negocio en un núcleo cohesivo y bien estructurado. Su diseño facilita el mantenimiento a largo plazo, soporta testing exhaustivo y proporciona una base sólida para la evolución continua del sistema en respuesta a requisitos empresariales cambiantes.
