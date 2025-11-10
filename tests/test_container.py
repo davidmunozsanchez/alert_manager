@@ -305,22 +305,26 @@ def test_09_web_service_basic_api(web_url):
     """Test basic API operations (if authentication not required)"""
     print(f"\n[TEST] Testing basic API operations")
 
-    try:
-        # Intentar listar alertas (puede requerir auth)
-        r = requests.get(f"{web_url}/alerts/", timeout=10)
-        print(f"[TEST] GET /alerts/ status: {r.status_code}")
+    r = requests.get(f"{web_url}/alerts/", timeout=15)
+    print(f"[TEST] GET /alerts/ status: {r.status_code}")
+    assert r.status_code in (200, 401), f"Unexpected status code: {r.status_code}"
 
-        if r.status_code == 200:
-            data = r.json()
-            print(f"[TEST] ✅ Retrieved {len(data)} alerts")
-            assert isinstance(data, list), "Should return a list"
-        elif r.status_code == 401:
-            print("[TEST] ℹ️  Endpoint requires authentication (expected)")
-        else:
-            print(f"[TEST] ⚠️  Unexpected status code: {r.status_code}")
+    if r.status_code == 401:
+        print("[TEST] ℹ️  Endpoint requires authentication (expected)")
+        return
 
-    except Exception as e:
-        print(f"[TEST] ⚠️  API test skipped: {e}")
+    data = r.json()
+    # Soportar respuesta paginada {"items": [...], ...} o lista directa [...]
+    if isinstance(data, dict) and "items" in data:
+        items = data["items"]
+        total = data.get("total", None)
+        print(f"[TEST] ✅ Paginated response detected. Items on page: {len(items)}; total: {total}")
+        assert isinstance(items, list), "items should be a list"
+    elif isinstance(data, list):
+        print(f"[TEST] ✅ List response detected. Items: {len(data)}")
+        assert isinstance(data, list), "Should return a list"
+    else:
+        raise AssertionError(f"Unexpected response shape: {type(data)} -> {data}")
 
 
 # @pytest.mark.skipif(os.getenv("SKIP_AIRFLOW_TEST"), reason="Airflow test skipped")
