@@ -10,7 +10,7 @@ on:
       - 'pyproject.toml'
       - '.github/workflows/publish-docker.yml'
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "hito4" ]
 
 env:
   REGISTRY: ghcr.io

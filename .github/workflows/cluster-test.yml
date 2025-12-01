@@ -4,6 +4,8 @@ on:
   workflow_dispatch:
   push:
     branches: ["main", "hito4"]
+  pull_request:
+    branches: ["main", "hito4"]
 
 jobs:
   test-cluster:
