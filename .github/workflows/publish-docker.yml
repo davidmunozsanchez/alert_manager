@@ -40,7 +40,8 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            # 👇 CAMBIO: Quitamos la condición para que SIEMPRE genere 'latest'
+            type=raw,value=latest
             type=sha
 
       - name: Build and push Docker image
