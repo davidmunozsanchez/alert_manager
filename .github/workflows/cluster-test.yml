@@ -22,7 +22,7 @@ jobs:
 
       - name: Start cluster (detached)
         run: |
-          docker compose -f docker/docker-compose.yml up -d
+          docker compose -f docker/docker-compose.yml up -d --no-build
           echo "⏳ Esperando a que los servicios estén levantados..."
           sleep 30
 
