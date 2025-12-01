@@ -40,7 +40,7 @@ services:
 
   # API Web Service
   web:
-    image: ghcr.io/${{ github.repository_owner }}/alert_manager:latest
+    image: ghcr.io/davidmunozsanchez/alert_manager:latest
     build:
       context: ..
       dockerfile: docker/Dockerfile
