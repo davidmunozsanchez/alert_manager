@@ -4,10 +4,13 @@ on:
   workflow_dispatch:      # Permite lanzarlo manualmente
   push:
     branches: ["main", "hito4"]
-    paths:
-      - 'src/**'
-      - 'docker/**'
-      - '.github/workflows/cluster-test.yml'
+    # paths:
+    #   - 'src/**'
+    #   - 'docker/**'
+    #   - '.github/workflows/cluster-test.yml'
+  pull_request:
+    branches: ["main"]
+
 
 env:
   # Define aquí el nombre de tu imagen remota para verificarla luego
