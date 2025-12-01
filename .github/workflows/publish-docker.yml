@@ -15,8 +15,7 @@ on:
 env:
   REGISTRY: ghcr.io
   # Cambia esto por tu usuario/repo en minúsculas
-  IMAGE_NAME: ${{ github.repository_owner }}/alert_manager
-
+  IMAGE_NAME: ${{ github.repository_owner }}
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
