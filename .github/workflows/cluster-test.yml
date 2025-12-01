@@ -1,0 +1,53 @@
+name: Cluster Test
+
+on:
+  workflow_dispatch:      # permite lanzarlo manualmente en GitHub Actions
+  push:
+    branches: ["main", "hito4"]    # opcional: también se lanza al hacer push en main
+
+jobs:
+  test-cluster:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create .env from template if exists
+        run: |
+          if [ -f .env.example ]; then cp .env.example .env; fi
+
+      - name: Start cluster (detached)
+        run: |
+          docker compose -f docker/docker-compose.yml up -d
+          echo "⏳ Esperando a que los servicios estén levantados..."
+          sleep 30
+
+      - name: Run cluster health tests
+        run: |
+          echo "🔍 Comprobando contenedores activos..."
+          docker ps
+          echo ""
+          echo "🧪 Esperando respuesta del API..."
+          curl --fail http://localhost:8000/health || exit 1
+          echo ""
+          echo "🧪 Esperando respuesta de Airflow Webserver..."
+          curl --fail http://localhost:8080 || exit 1
+          echo ""
+          echo "🧪 Esperando respuesta del Frontend..."
+          curl --fail http://localhost:3000 || exit 1
+          echo ""
+          echo "🎉 El clúster funciona correctamente"
+
+      - name: Stop cluster
+        if: always()
+        run: |
+          docker compose -f docker/docker-compose.yml down -v
+      
+      - name: Show Microservice Logs
+        run: |
+          docker compose -f docker/docker-compose.yml logs --tail=80
+  
