@@ -24,11 +24,19 @@ jobs:
         run: |
           if [ -f .env.example ]; then cp .env.example .env; fi
 
-      - name: Start cluster (detached)
+      # ... paso de login anterior ...
+
+      # 👇 AÑADE ESTO PARA DEPURAR
+      - name: Debug - Force Pull Image
+        run: |
+          echo "Intentando descargar explícitamente..."
+          docker pull ghcr.io/davidmunozsanchez/alert_manager:latest
+          echo "✅ Imagen descargada correctamente"
+          docker images
+
+      - name: Start cluster
         run: |
           docker compose -f docker/docker-compose.yml up -d --no-build
-          echo "⏳ Esperando a que los servicios estén levantados..."
-          sleep 30
 
       - name: Run cluster health tests
         run: |
