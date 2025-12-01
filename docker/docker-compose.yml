@@ -42,7 +42,7 @@ services:
   web:
     image: ghcr.io/davidmunozsanchez/alert_manager:latest
     build:
-      context: ...
+      context: ..
       dockerfile: docker/Dockerfile
     container_name: alert_manager_web
     depends_on:
