@@ -148,6 +148,6 @@ Existen dos tipos de tests de integración en el proyecto, cada uno con un prop�
 
 ## Apéndice
 
-Los logs de las Actions son bastante largos. Como se ha documentado todo aquí debidamente, se recomienda consultar los últimos test exitosos en:
+Los logs de las Actions son bastante largos. Como se ha documentado todo aquí debidamente, se recomienda consultar los últimos test exitosos del pull request de la rama hito4 a main en:
 
-[ACTIONS GitHub](https://github.com/davidmunozsanchez/alert_manager/actions)
+[ACTIONS GitHub](https://github.com/davidmunozsanchez/alert_manager/pull/40)
