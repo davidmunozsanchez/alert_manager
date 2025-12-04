@@ -143,3 +143,11 @@ Existen dos tipos de tests de integración en el proyecto, cada uno con un prop�
 -   **4. Publicación en GitHub Packages**: se describe el proceso de construcción y publicación automática de la imagen del microservicio a través del workflow `publish-docker.yml`, desacoplando la construcción del despliegue.
 -   **5. Documentación de `compose.yaml`**: el fichero está bien estructurado, documentando mapeo de puertos, volúmenes, redes y configuración, cumpliendo todos los requisitos.
 -   **6. Test de validación**: se ha implementado un test de integración (`cluster-test.yml`) que valida el funcionamiento del clúster completo, usando la imagen publicada y verificando la disponibilidad de los servicios. Se explica su diferencia y propósito respecto a tests anteriores.
+
+
+
+## Apéndice
+
+Los logs de las Actions son bastante largos. Como se ha documentado todo aquí debidamente, se recomienda consultar los últimos test exitosos en:
+
+[ACTIONS GitHub](https://github.com/davidmunozsanchez/alert_manager/actions)

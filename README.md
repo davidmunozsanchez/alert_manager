@@ -17,7 +17,9 @@ Toda la información técnica y el desarrollo del proyecto se encuentran documen
 
 - [Hito 3: Diseño de microservicios](./doc/hito3.md)
 
-Consideraciones previas hito3: se ha refactorizado buena parte de la app para desacoplar la lógica de negocio de la propia API. Se ha intentando documentar todo lo máximo posible. No obstante, el código también tiene comentarios y se han comentado diversos avances en la propia documentación.
+- [Hito 4: Composición de servicios](./doc/hito4.md)
+
+Consideraciones hito4: se han creado nuevos Workflows para crear una imagen del contenedor web de Docker y probarla. La documentación sobre los contenedores se ha amplidado. Para la próxima entrega, se implementará un DAG en Airflow para llamar a la API de la AEMET y rellenar la base de datos. Además, se piensa aplicar scrapping a alguna web que no tenga una API pública.
 
 > A medida que avance el desarrollo, se irán añadiendo nuevos hitos y documentación adicional.
 
