@@ -1,0 +1,69 @@
+name: Cluster Test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main", "hito4"]
+  pull_request:
+    branches: ["main", "hito4"]
+
+jobs:
+  test-cluster:
+    runs-on: ubuntu-latest
+    # 👇 Permisos necesarios para leer el token
+    permissions:
+      contents: read
+      packages: read
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      # 👇 ESTE ES EL PASO QUE FALTABA (Login)
+      # Sin esto, Docker intenta entrar como "anónimo" y falla
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Create .env from template if exists
+        run: |
+          if [ -f .env.example ]; then cp .env.example .env; fi
+
+      # Ahora el debug sí funcionará porque estás logueado
+      - name: Debug - Force Pull Image
+        run: |
+          echo "Intentando descargar explícitamente..."
+          docker pull ghcr.io/davidmunozsanchez/alert_manager:latest
+          echo "✅ Imagen descargada correctamente"
+          docker images
+
+      - name: Start cluster
+        run: |
+          # --no-build fuerza a usar la imagen descargada
+          docker compose -f docker/docker-compose.yml up -d --no-build
+
+      - name: Run cluster health tests
+        run: |
+          echo "🔍 Comprobando contenedores activos..."
+          docker ps
+          # (Aquí te recomiendo poner de nuevo el script paciente 'wait_for_url' que hicimos antes)
+          # Pero para probar la descarga, esto vale:
+          sleep 30 
+          curl --fail http://localhost:8000/health || exit 1
+          echo "🎉 El clúster funciona correctamente"
+
+      - name: Stop cluster
+        if: always()
+        run: |
+          docker compose -f docker/docker-compose.yml down -v
+      
+      - name: Show Microservice Logs
+        if: failure()
+        run: |
+          docker compose -f docker/docker-compose.yml logs --tail=80

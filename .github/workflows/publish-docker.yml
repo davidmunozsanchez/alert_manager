@@ -1,0 +1,55 @@
+name: Docker Image CI
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [ "main", "hito4" ]
+    paths:
+      - 'src/**'
+      - 'docker/**'
+      - 'pyproject.toml'
+      - '.github/workflows/publish-docker.yml'
+  pull_request:
+    branches: [ "main", "hito4" ]
+
+env:
+  REGISTRY: ghcr.io
+  # Cambia esto por tu usuario/repo en minúsculas
+  IMAGE_NAME: ${{ github.repository_owner }}/alert_manager
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+          
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            # 👇 CAMBIO: Quitamos la condición para que SIEMPRE genere 'latest'
+            type=raw,value=latest
+            type=sha
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
