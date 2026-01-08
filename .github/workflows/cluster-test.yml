@@ -62,8 +62,8 @@ jobs:
           docker ps -a
           
           echo ""
-          echo "⏳ Esperando más tiempo (otros 30s)..."
-          sleep 30
+          echo "⏳ Esperando más tiempo (otros 60s para que Airflow inicialice)..."
+          sleep 60
           
           echo "✅ Servicios deberían estar iniciados"
 
@@ -112,6 +112,14 @@ jobs:
           fi
           
           echo ""
+          echo "📊 Tablas creadas en alert_manager:"
+          docker exec docker-db-1 psql -U postgres -d alert_manager -c "\dt" 2>/dev/null || echo "⚠️ No se pudo acceder a la tabla de tablas"
+          
+          echo ""
+          echo "📊 Esquema de la tabla 'alerts':"
+          docker exec docker-db-1 psql -U postgres -d alert_manager -c "\d alerts" 2>/dev/null || echo "⚠️ Tabla 'alerts' no existe aún"
+          
+          echo ""
           echo "📍 === VERIFICANDO ESTADO DEL DAG EN AIRFLOW ==="
           
           # Intentar obtener info del DAG vía API de Airflow
@@ -125,9 +133,28 @@ jobs:
             echo ""
             echo "🔄 Últimas ejecuciones del DAG:"
             RUNS=$(curl -s "http://localhost:8080/api/v1/dags/aemet_alerts_ingestion/dagRuns?limit=3" 2>/dev/null || echo "{}")
-            echo "$RUNS" | jq '.dag_runs[] | {execution_date, state, start_date, end_date}' 2>/dev/null || true
+            RUNS_COUNT=$(echo "$RUNS" | jq '.dag_runs | length' 2>/dev/null || echo "0")
+            
+            if [ "$RUNS_COUNT" -gt 0 ]; then
+              echo "✅ Encontradas $RUNS_COUNT ejecuciones del DAG"
+              echo "$RUNS" | jq '.dag_runs[] | {execution_date, state, start_date, end_date}' 2>/dev/null || true
+            else
+              echo "⚠️  No hay ejecuciones del DAG aún. Esperando más tiempo..."
+              sleep 30
+              RUNS=$(curl -s "http://localhost:8080/api/v1/dags/aemet_alerts_ingestion/dagRuns?limit=3" 2>/dev/null || echo "{}")
+              RUNS_COUNT=$(echo "$RUNS" | jq '.dag_runs | length' 2>/dev/null || echo "0")
+              echo "   Después de esperar: $RUNS_COUNT ejecuciones encontradas"
+            fi
           else
-            echo "⚠️  No se pudo acceder a API de Airflow (es normal si aún está inicializando)"
+            echo "⚠️  No se pudo acceder a API de Airflow. Esperando más tiempo..."
+            sleep 30
+            DAG_RESPONSE=$(curl -s "http://localhost:8080/api/v1/dags/aemet_alerts_ingestion" 2>/dev/null || echo "{}")
+            if echo "$DAG_RESPONSE" | jq . >/dev/null 2>&1; then
+              echo "✅ Airflow ahora disponible"
+              echo "$DAG_RESPONSE" | jq '{dag_id, is_paused, schedule_interval}' 2>/dev/null || true
+            else
+              echo "⚠️  Airflow aún no está listo"
+            fi
           fi
           
           echo ""
