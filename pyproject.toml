@@ -7,7 +7,9 @@ readme = "README.md"
 packages = [{include = "src"}]
 
 [tool.poetry.dependencies]
+# Extracción web requiere playwright
 python = ">=3.11,<3.13"
+playwright = "^1.42.0"
 # Mantener SQLAlchemy compatible con Airflow
 sqlalchemy = ">=1.4.36,<2.0"
 psycopg2-binary = "^2.9.9"
