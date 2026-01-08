@@ -93,8 +93,14 @@ jobs:
           ELAPSED=0
           MAX_WAIT=120
           while [ $ELAPSED -lt $MAX_WAIT ]; do
-            if psql -h localhost -p 5432 -U postgres -d alert_manager -c "SELECT 1;" 2>/dev/null; then
+            # Intentar conexión vía docker exec (más confiable)
+            if docker exec docker-db-1 psql -U postgres -d alert_manager -c "SELECT 1;" >/dev/null 2>&1; then
               echo "✅ PostgreSQL disponible"
+              break
+            fi
+            # Si falla, intentar vía localhost
+            if psql -h localhost -p 5432 -U postgres -d alert_manager -c "SELECT 1;" >/dev/null 2>&1; then
+              echo "✅ PostgreSQL disponible (vía localhost)"
               break
             fi
             echo "⏳ PostgreSQL no disponible (${ELAPSED}s), reintentando en 5s..."
@@ -106,7 +112,7 @@ jobs:
             echo "❌ PostgreSQL no está disponible después de 120s"
             echo ""
             echo "📋 LOGS DE POSTGRES:"
-            docker logs alert_manager-postgres-1 2>/dev/null | tail -30 || true
+            docker logs docker-db-1 2>/dev/null | tail -30 || true
             exit 1
           fi
           
@@ -133,9 +139,9 @@ jobs:
           echo "📍 === VERIFICANDO ALERTAS EN BASE DE DATOS ==="
           
           echo "🧹 Limpiando alertas previas (estado inicial)..."
-          psql -h localhost -p 5432 -U postgres -d alert_manager -c "DELETE FROM alerts;" 2>/dev/null || echo "⚠️ Tabla podría no existir aún"
+          docker exec docker-db-1 psql -U postgres -d alert_manager -c "DELETE FROM alerts;" 2>/dev/null || echo "⚠️ Tabla podría no existir aún"
           
-          INITIAL_COUNT=$(psql -h localhost -p 5432 -U postgres -d alert_manager -t -c "SELECT COUNT(*) FROM alerts;" 2>/dev/null || echo "0")
+          INITIAL_COUNT=$(docker exec docker-db-1 psql -U postgres -d alert_manager -t -c "SELECT COUNT(*) FROM alerts;" 2>/dev/null || echo "0")
           echo "✅ Alertas iniciales: $INITIAL_COUNT"
           
           echo ""
@@ -146,20 +152,20 @@ jobs:
           INTERVAL=10
           
           while [ $ELAPSED -lt $MAX_WAIT ]; do
-            CURRENT_COUNT=$(psql -h localhost -p 5432 -U postgres -d alert_manager -t -c "SELECT COUNT(*) FROM alerts;" 2>/dev/null || echo "0")
+            CURRENT_COUNT=$(docker exec docker-db-1 psql -U postgres -d alert_manager -t -c "SELECT COUNT(*) FROM alerts;" 2>/dev/null || echo "0")
             
             if [ "$CURRENT_COUNT" -gt 0 ]; then
               echo "✅ ¡DAG ejecutado! Se encontraron $CURRENT_COUNT alertas después de ${ELAPSED}s"
               
               echo ""
               echo "📊 Detalles de alertas:"
-              psql -h localhost -p 5432 -U postgres -d alert_manager -c "
+              docker exec docker-db-1 psql -U postgres -d alert_manager -c "
                 SELECT COUNT(*) as total, level, type FROM alerts GROUP BY level, type ORDER BY total DESC LIMIT 10;
               " 2>/dev/null || true
               
               echo ""
               echo "🔍 Últimas 3 alertas:"
-              psql -h localhost -p 5432 -U postgres -d alert_manager -c "
+              docker exec docker-db-1 psql -U postgres -d alert_manager -c "
                 SELECT id, title, level, type, region, timestamp FROM alerts ORDER BY timestamp DESC LIMIT 3;
               " 2>/dev/null || true
               
