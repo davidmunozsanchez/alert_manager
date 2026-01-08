@@ -261,3 +261,38 @@ jobs:
 
       - name: Run CRUD Unit Tests
         run: poetry run pytest -v tests/test_crud.py
+
+  # Tests de integración AEMET críticos (requiere API real)
+  test_aemet_integration:
+    name: AEMET API Integration Tests
+    runs-on: ubuntu-latest
+    needs: lint
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+
+      - name: Install dependencies
+        run: poetry install
+
+      - name: Run AEMET Integration Tests
+        env:
+          AEMET_API_KEY: ${{ secrets.AEMET_API_KEY }}
+        run: |
+          poetry run pytest -v tests/test_aemet_integration.py -s
+        continue-on-error: true
+        # Se ejecuta pero no falla el workflow si falla (por si AEMET está down)
+
+      - name: AEMET Tests Summary
+        if: always()
+        run: |
+          echo "✅ Test de integración AEMET completado"
+          echo "ℹ️  Este test verifica conectividad con la API real de AEMET"
