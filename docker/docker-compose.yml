@@ -168,6 +168,7 @@ services:
       PYTHONPATH: /opt/airflow/infrastructure
       AEMET_API_KEY: ${AEMET_API_KEY:-}
       AIRFLOW_VAR_AEMET_API_KEY: ${AEMET_API_KEY:-}
+    user: "0:0"
     volumes:
       - ../src/dags:/opt/airflow/dags
       - ./logs:/opt/airflow/logs
@@ -204,6 +205,7 @@ services:
       PYTHONPATH: /opt/airflow/infrastructure
       AEMET_API_KEY: ${AEMET_API_KEY:-}
       AIRFLOW_VAR_AEMET_API_KEY: ${AEMET_API_KEY:-}
+    user: "0:0"
     volumes:
       - ../src/dags:/opt/airflow/dags
       - ./logs:/opt/airflow/logs
