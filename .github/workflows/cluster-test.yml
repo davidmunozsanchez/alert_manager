@@ -177,9 +177,9 @@ jobs:
           
           if [ "$AIRFLOW_READY" != "true" ]; then
             echo "⚠️  Airflow API no está lista, mostrando logs:"
-            docker logs docker-airflow-webserver-1 2>/dev/null | tail -20 || true
+            docker logs docker-airflow-webserver-1 2>/dev/null | tail -30 || true
             echo ""
-            docker logs docker-airflow-scheduler-1 2>/dev/null | tail -20 || true
+            docker logs docker-airflow-scheduler-1 2>/dev/null | tail -30 || true
           fi
           
           # Intentar obtener info del DAG vía API de Airflow
@@ -213,12 +213,20 @@ jobs:
                 docker logs docker-airflow-scheduler-1 2>/dev/null | tail -50 || true
                 
                 echo ""
-                echo "📋 Intentando obtener logs de DagFileProcessorManager:"
-                docker exec docker-airflow-scheduler-1 tail -100 /opt/airflow/logs/dag_processor_manager/dag_processor_manager.log 2>/dev/null || echo "⚠️ No se pudo acceder al log"
+                echo "📋 Verificando archivo DAG en el contenedor:"
+                docker exec docker-airflow-scheduler-1 ls -la /opt/airflow/dags/ 2>/dev/null || echo "⚠️ No se pudo listar /opt/airflow/dags"
                 
                 echo ""
-                echo "📋 Listando archivos en /opt/airflow/dags:"
-                docker exec docker-airflow-scheduler-1 ls -la /opt/airflow/dags/ 2>/dev/null || echo "⚠️ No se pudo listar"
+                echo "📋 Contenido del archivo DAG:"
+                docker exec docker-airflow-scheduler-1 head -50 /opt/airflow/dags/aemet_alerts_ingestion.py 2>/dev/null || echo "⚠️ No se pudo leer el DAG"
+                
+                echo ""
+                echo "📋 Intentando verificar sintaxis del DAG:"
+                docker exec docker-airflow-scheduler-1 python -m py_compile /opt/airflow/dags/aemet_alerts_ingestion.py 2>&1 || echo "⚠️ Error de sintaxis en el DAG"
+                
+                echo ""
+                echo "📋 Logs de DagFileProcessorManager:"
+                docker exec docker-airflow-scheduler-1 tail -100 /opt/airflow/logs/dag_processor_manager/dag_processor_manager.log 2>/dev/null || echo "⚠️ No se pudo acceder al log"
               fi
             fi
             
