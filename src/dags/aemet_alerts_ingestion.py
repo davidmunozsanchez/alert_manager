@@ -243,6 +243,8 @@ def validate_and_insert_aemet_alerts() -> None:
     """
     Valida las alertas AEMET e inserta en PostgreSQL.
     """
+    import time
+    
     try:
         print("Iniciando validación e inserción de alertas AEMET...")
         
@@ -304,71 +306,134 @@ def validate_and_insert_aemet_alerts() -> None:
             print("⚠️  No hay alertas válidas para insertar.")
             return
         
-        # Conectar a PostgreSQL
-        try:
-            conn = psycopg2.connect(
-                dbname="alerts",
-                user="postgres",
-                password="postgres",
-                host="db",
-                port=5432
-            )
-            cur = conn.cursor()
-            
-            # PASO 1: Borrar solo las alertas de AEMET anteriores
-            print("🗑️  Borrando alertas AEMET anteriores...")
+        # Conectar a PostgreSQL con reintentos
+        conn = None
+        max_retries = 10
+        retry_delay = 5
+        
+        for attempt in range(max_retries):
             try:
-                cur.execute("DELETE FROM alerts WHERE source = %s", ("aemet_opendata",))
-                deleted_count = cur.rowcount
-                conn.commit()
-                print(f"✅ {deleted_count} alertas AEMET eliminadas")
-            except Exception as e:
-                print(f"⚠️  Error al borrar alertas: {e}")
-                conn.rollback()
-            
-            # PASO 2: Insertar nuevas alertas de AEMET
-            print("📝 Insertando nuevas alertas AEMET...")
-            inserted_count = 0
-            for alert in valid_alerts:
-                try:
-                    cur.execute(
-                        """
-                        INSERT INTO alerts (
-                            title, description, level, type, region, status,
-                            expires_at, timestamp, latitude, longitude, source
-                        ) VALUES (
-                            %(title)s, %(description)s, %(level)s, %(type)s,
-                            %(region)s, %(status)s, %(expires_at)s, NOW(),
-                            %(latitude)s, %(longitude)s, %(source)s
-                        )
-                    """,
-                        {
-                            "title": str(alert.get("title", ""))[:200],
-                            "description": str(alert.get("description", ""))[:1000],
-                            "level": str(alert.get("level", ""))[:50],
-                            "type": str(alert.get("type", ""))[:50],
-                            "region": str(alert.get("region", ""))[:200],
-                            "status": str(alert.get("status", ""))[:50],
-                            "expires_at": alert.get("expires_at") or None,
-                            "latitude": float(alert.get("latitude", 0)),
-                            "longitude": float(alert.get("longitude", 0)),
-                            "source": "aemet_opendata"
-                        }
-                    )
-                    inserted_count += 1
-                except Exception as e:
-                    print(f"⚠️  Error insertando alerta: {e}")
-                    continue
-            
-            conn.commit()
-            cur.close()
+                conn = psycopg2.connect(
+                    dbname="alert_manager",
+                    user="postgres",
+                    password="postgres",
+                    host="db",
+                    port=5432
+                )
+                print(f"✅ Conexión a PostgreSQL establecida en intento {attempt + 1}")
+                break
+            except psycopg2.Error as e:
+                print(f"⏳ Error conectando a PostgreSQL (intento {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    print(f"   Esperando {retry_delay}s antes de reintentar...")
+                    time.sleep(retry_delay)
+                else:
+                    print(f"❌ No se pudo conectar a PostgreSQL después de {max_retries} intentos")
+                    raise
+        
+        cur = conn.cursor()
+        
+        # Verificar que la tabla existe
+        print("🔍 Verificando que la tabla 'alerts' existe...")
+        cur.execute("""
+            SELECT EXISTS (
+                SELECT 1 FROM information_schema.tables 
+                WHERE table_name = 'alerts'
+            )
+        """)
+        table_exists = cur.fetchone()[0]
+        
+        if not table_exists:
+            print("⚠️  Tabla 'alerts' no existe aún. Esperando a que se cree...")
             conn.close()
+            print("   Esperando 30s para que FastAPI inicialice la BD...")
+            time.sleep(30)
             
-            print(f"✅ {inserted_count} alertas insertadas en la base de datos.")
+            # Reconectar
+            for attempt in range(3):
+                try:
+                    conn = psycopg2.connect(
+                        dbname="alert_manager",
+                        user="postgres",
+                        password="postgres",
+                        host="db",
+                        port=5432
+                    )
+                    cur = conn.cursor()
+                    cur.execute("""
+                        SELECT EXISTS (
+                            SELECT 1 FROM information_schema.tables 
+                            WHERE table_name = 'alerts'
+                        )
+                    """)
+                    table_exists = cur.fetchone()[0]
+                    if table_exists:
+                        print("✅ Tabla 'alerts' ahora existe")
+                        break
+                except Exception as e:
+                    print(f"⏳ Reintentando... ({attempt + 1}/3): {e}")
+                    time.sleep(10)
             
-        except psycopg2.Error as e:
-            print(f"❌ Error de conexión a PostgreSQL: {e}")
-            raise
+            if not table_exists:
+                print("❌ La tabla 'alerts' sigue sin existir. Abortando.")
+                if conn:
+                    conn.close()
+                return
+        
+        # PASO 1: Borrar solo las alertas de AEMET anteriores
+        print("🗑️  Borrando alertas AEMET anteriores...")
+        try:
+            cur.execute("DELETE FROM alerts WHERE source = %s", ("aemet_opendata",))
+            deleted_count = cur.rowcount
+            conn.commit()
+            print(f"✅ {deleted_count} alertas AEMET eliminadas")
+        except Exception as e:
+            print(f"⚠️  Error al borrar alertas: {e}")
+            conn.rollback()
+        
+        # PASO 2: Insertar nuevas alertas de AEMET
+        print("📝 Insertando nuevas alertas AEMET...")
+        inserted_count = 0
+        for alert in valid_alerts:
+            try:
+                cur.execute(
+                    """
+                    INSERT INTO alerts (
+                        title, description, level, type, region, status,
+                        expires_at, timestamp, latitude, longitude, source
+                    ) VALUES (
+                        %(title)s, %(description)s, %(level)s, %(type)s,
+                        %(region)s, %(status)s, %(expires_at)s, NOW(),
+                        %(latitude)s, %(longitude)s, %(source)s
+                    )
+                """,
+                    {
+                        "title": str(alert.get("title", ""))[:200],
+                        "description": str(alert.get("description", ""))[:1000],
+                        "level": str(alert.get("level", ""))[:50],
+                        "type": str(alert.get("type", ""))[:50],
+                        "region": str(alert.get("region", ""))[:200],
+                        "status": str(alert.get("status", ""))[:50],
+                        "expires_at": alert.get("expires_at") or None,
+                        "latitude": float(alert.get("latitude", 0)),
+                        "longitude": float(alert.get("longitude", 0)),
+                        "source": "aemet_opendata"
+                    }
+                )
+                inserted_count += 1
+            except Exception as e:
+                print(f"⚠️  Error insertando alerta: {e}")
+                continue
+        
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        print(f"✅ {inserted_count} alertas insertadas en la base de datos.")
+        
+    except psycopg2.Error as e:
+        print(f"❌ Error de conexión a PostgreSQL: {e}")
+        raise
     
     except Exception as e:
         print(f"❌ Error durante validación:")

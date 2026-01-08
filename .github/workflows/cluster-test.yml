@@ -112,12 +112,40 @@ jobs:
           fi
           
           echo ""
-          echo "📊 Tablas creadas en alert_manager:"
-          docker exec docker-db-1 psql -U postgres -d alert_manager -c "\dt" 2>/dev/null || echo "⚠️ No se pudo acceder a la tabla de tablas"
+          echo "� === ESPERANDO A QUE LA TABLA 'alerts' SE CREE ==="
+          ELAPSED=0
+          MAX_WAIT_TABLES=180
+          TABLE_FOUND=false
+          
+          while [ $ELAPSED -lt $MAX_WAIT_TABLES ]; do
+            TABLE_EXISTS=$(docker exec docker-db-1 psql -U postgres -d alert_manager -t -c "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name='alerts');" 2>/dev/null || echo "false")
+            TABLE_EXISTS=$(echo "$TABLE_EXISTS" | xargs)
+            
+            if [ "$TABLE_EXISTS" = "t" ]; then
+              echo "✅ Tabla 'alerts' creada correctamente!"
+              TABLE_FOUND=true
+              break
+            fi
+            
+            if [ $((ELAPSED % 30)) -eq 0 ]; then
+              echo "⏳ Tabla 'alerts' aún no existe (${ELAPSED}s de ${MAX_WAIT_TABLES}s), reintentando..."
+            fi
+            
+            sleep 5
+            ELAPSED=$((ELAPSED + 5))
+          done
+          
+          if [ "$TABLE_FOUND" != "true" ]; then
+            echo "❌ Tabla 'alerts' no se creó después de ${MAX_WAIT_TABLES}s"
+            echo ""
+            echo "📊 Tablas existentes en alert_manager:"
+            docker exec docker-db-1 psql -U postgres -d alert_manager -c "\dt" 2>/dev/null || true
+            exit 1
+          fi
           
           echo ""
           echo "📊 Esquema de la tabla 'alerts':"
-          docker exec docker-db-1 psql -U postgres -d alert_manager -c "\d alerts" 2>/dev/null || echo "⚠️ Tabla 'alerts' no existe aún"
+          docker exec docker-db-1 psql -U postgres -d alert_manager -c "\d alerts" 2>/dev/null || true
           
           echo ""
           echo "📍 === VERIFICANDO ESTADO DEL DAG EN AIRFLOW ==="
