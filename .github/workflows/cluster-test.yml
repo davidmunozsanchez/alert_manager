@@ -50,9 +50,8 @@ jobs:
           POSTGRES_PASSWORD: postgres
           DB_NAME: alert_manager
         run: |
-          # Construir la imagen personalizada de Airflow y luego iniciar
-          cd docker && docker compose -f docker-compose.yml build --no-cache airflow-init airflow-webserver airflow-scheduler
-          docker compose -f docker-compose.yml up -d
+          # --no-build fuerza a usar la imagen descargada
+          cd docker && docker compose -f docker-compose.yml up -d --no-build
 
       - name: Wait for services to be ready
         run: |
