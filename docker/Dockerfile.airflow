@@ -1,0 +1,19 @@
+FROM apache/airflow:2.9.1-python3.11
+
+# Instalar dependencias del sistema
+USER root
+RUN apt-get update && apt-get install -y \
+    postgresql-client \
+    curl \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Instalar dependencias Python necesarias para los DAGs
+RUN pip install --no-cache-dir \
+    psycopg2-binary \
+    requests \
+    python-dotenv
+
+USER airflow
+
+WORKDIR /opt/airflow

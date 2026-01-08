@@ -113,7 +113,9 @@ services:
 
   # Inicialización de Airflow
   airflow-init:
-    image: apache/airflow:2.9.1
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
     depends_on:
       airflow-db:
         condition: service_healthy
@@ -151,7 +153,9 @@ services:
 
   # Servidor web de Airflow
   airflow-webserver:
-    image: apache/airflow:2.9.1
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
     depends_on:
       airflow-init:
         condition: service_completed_successfully
@@ -190,7 +194,9 @@ services:
 
   # Scheduler de Airflow
   airflow-scheduler:
-    image: apache/airflow:2.9.1
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
     depends_on:
       airflow-init:
         condition: service_completed_successfully

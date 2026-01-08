@@ -50,8 +50,9 @@ jobs:
           POSTGRES_PASSWORD: postgres
           DB_NAME: alert_manager
         run: |
-          # --no-build fuerza a usar la imagen descargada
-          cd docker && docker compose -f docker-compose.yml up -d --no-build
+          # Construir la imagen personalizada de Airflow y luego iniciar
+          cd docker && docker compose -f docker-compose.yml build --no-cache airflow-init airflow-webserver airflow-scheduler
+          docker compose -f docker-compose.yml up -d
 
       - name: Wait for services to be ready
         run: |
@@ -210,7 +211,15 @@ jobs:
                 echo "$RUNS" | jq '.dag_runs[] | {execution_date, state, start_date, end_date}' 2>/dev/null || true
               else
                 echo "⚠️  Aún sin ejecuciones. Mostrando logs del scheduler:"
-                docker logs docker-airflow-scheduler-1 2>/dev/null | tail -40 || true
+                docker logs docker-airflow-scheduler-1 2>/dev/null | tail -50 || true
+                
+                echo ""
+                echo "📋 Intentando obtener logs de DagFileProcessorManager:"
+                docker exec docker-airflow-scheduler-1 tail -100 /opt/airflow/logs/dag_processor_manager/dag_processor_manager.log 2>/dev/null || echo "⚠️ No se pudo acceder al log"
+                
+                echo ""
+                echo "📋 Listando archivos en /opt/airflow/dags:"
+                docker exec docker-airflow-scheduler-1 ls -la /opt/airflow/dags/ 2>/dev/null || echo "⚠️ No se pudo listar"
               fi
             fi
             
