@@ -352,6 +352,114 @@ def get_alert(
         logger.error(f"Error getting alert {alert_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Error interno del servidor")
 
+@router.put("/{alert_id}", status_code=status.HTTP_200_OK)
+def update_alert_full(
+    alert_id: int,
+    alert_data: AlertUpdateSchema,
+    alert_service: AlertService = Depends(get_alert_service)
+):
+    """Actualizar completamente una alerta existente (PUT) - SIMPLIFICADO"""
+    try:
+        # Preparar datos para actualización
+        update_dict = alert_data.dict(exclude_unset=False, exclude_none=False)
+        
+        # Convertir enums a valores si existen
+        if 'level' in update_dict and update_dict['level']:
+            update_dict['level'] = update_dict['level'].value
+        if 'type' in update_dict and update_dict['type']:
+            update_dict['type'] = update_dict['type'].value
+        if 'status' in update_dict and update_dict['status']:
+            update_dict['status'] = update_dict['status'].value
+        
+        alert = alert_service.update_alert(alert_id, update_dict)
+        
+        logger.info(
+            f"Alert updated successfully: {alert_id}",
+            extra={
+                "event_type": "alert_updated",
+                "alert_id": alert.id,
+                "method": "PUT"
+            }
+        )
+        
+        return AlertResponseSchema.from_domain(alert).dict()
+        
+    except AlertNotFoundException as e:
+        raise HTTPException(status_code=404, detail=e.message)
+    except (InvalidAlertDataException, DuplicateAlertException) as e:
+        logger.warning(f"Invalid alert data for update: {e.message}")
+        raise HTTPException(status_code=400, detail=e.message)
+    except Exception as e:
+        logger.error(f"Error updating alert {alert_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
+
+@router.patch("/{alert_id}", status_code=status.HTTP_200_OK)
+def update_alert_partial(
+    alert_id: int,
+    alert_data: AlertUpdateSchema,
+    alert_service: AlertService = Depends(get_alert_service)
+):
+    """Actualizar parcialmente una alerta existente (PATCH) - SIMPLIFICADO"""
+    try:
+        # Preparar datos para actualización (solo incluir campos con valores)
+        update_dict = alert_data.dict(exclude_unset=True, exclude_none=True)
+        
+        # Convertir enums a valores si existen
+        if 'level' in update_dict and update_dict['level']:
+            update_dict['level'] = update_dict['level'].value
+        if 'type' in update_dict and update_dict['type']:
+            update_dict['type'] = update_dict['type'].value
+        if 'status' in update_dict and update_dict['status']:
+            update_dict['status'] = update_dict['status'].value
+        
+        alert = alert_service.update_alert(alert_id, update_dict)
+        
+        logger.info(
+            f"Alert partially updated successfully: {alert_id}",
+            extra={
+                "event_type": "alert_updated",
+                "alert_id": alert.id,
+                "method": "PATCH",
+                "fields_updated": list(update_dict.keys())
+            }
+        )
+        
+        return AlertResponseSchema.from_domain(alert).dict()
+        
+    except AlertNotFoundException as e:
+        raise HTTPException(status_code=404, detail=e.message)
+    except (InvalidAlertDataException, DuplicateAlertException) as e:
+        logger.warning(f"Invalid alert data for update: {e.message}")
+        raise HTTPException(status_code=400, detail=e.message)
+    except Exception as e:
+        logger.error(f"Error partially updating alert {alert_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
+
+@router.delete("/{alert_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_alert(
+    alert_id: int,
+    alert_service: AlertService = Depends(get_alert_service)
+):
+    """Eliminar una alerta existente - SIMPLIFICADO"""
+    try:
+        alert_service.delete_alert(alert_id)
+        
+        logger.info(
+            f"Alert deleted successfully: {alert_id}",
+            extra={
+                "event_type": "alert_deleted",
+                "alert_id": alert_id
+            }
+        )
+        
+        return None  # 204 No Content
+        
+    except AlertNotFoundException as e:
+        raise HTTPException(status_code=404, detail=e.message)
+    except Exception as e:
+        logger.error(f"Error deleting alert {alert_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
+
 # ================================
 # ENDPOINTS ESPECIALES
 # ================================
