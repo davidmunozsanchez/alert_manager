@@ -2,9 +2,9 @@ name: Docker Integration Tests
 
 on:
   push:
-    branches: [ "main", "hito4" ]
+    branches: [ "main", "hito5" ]
   pull_request:
-    branches: [ "main", "hito4" ]
+    branches: [ "main", "hito5" ]
 
 jobs:
   lint:
@@ -90,6 +90,34 @@ jobs:
             tests/test_middleware.py \
             tests/test_pydantic.py
 
+  # Tests de secrets (verifica que los secrets de GitHub estén configurados)
+  test_secrets:
+    name: Secrets configuration tests
+    runs-on: ubuntu-latest
+    needs: lint
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+
+      - name: Install dependencies
+        run: poetry install
+
+      - name: Run secrets tests
+        env:
+          # Los secrets se inyectan aquí en GitHub Actions
+          AEMET_API_KEY: ${{ secrets.AEMET_API_KEY }}
+        run: |
+          poetry run pytest -v tests/test_secrets.py
+
   # Tests de integración con Docker (incluye los nuevos tests añadidos en test_container.py)
   test_docker_integration:
     name: Docker integration tests (containers)
@@ -156,6 +184,9 @@ jobs:
         run: poetry install
 
       - name: Run DAG Tests
+        env:
+          # Inyectar AEMET_API_KEY para los tests
+          AEMET_API_KEY: ${{ secrets.AEMET_API_KEY }}
         run: poetry run pytest -v tests/test_dags.py
 
   # Tests CRUD existentes (se mantienen)
