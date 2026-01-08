@@ -93,14 +93,9 @@ jobs:
           ELAPSED=0
           MAX_WAIT=120
           while [ $ELAPSED -lt $MAX_WAIT ]; do
-            # Intentar conexión vía docker exec (más confiable)
-            if docker exec docker-db-1 psql -U postgres -d alert_manager -c "SELECT 1;" >/dev/null 2>&1; then
+            # Intentar conexión vía docker exec (sin especificar DB, solo conectar a postgres)
+            if docker exec docker-db-1 psql -U postgres -c "SELECT 1;" >/dev/null 2>&1; then
               echo "✅ PostgreSQL disponible"
-              break
-            fi
-            # Si falla, intentar vía localhost
-            if psql -h localhost -p 5432 -U postgres -d alert_manager -c "SELECT 1;" >/dev/null 2>&1; then
-              echo "✅ PostgreSQL disponible (vía localhost)"
               break
             fi
             echo "⏳ PostgreSQL no disponible (${ELAPSED}s), reintentando en 5s..."
