@@ -381,7 +381,7 @@ with DAG(
     dag_id="aemet_alerts_ingestion",
     start_date=datetime(2024, 1, 1),
     schedule_interval="*/15 * * * *",  # Cada 15 minutos
-    catchup=False,
+    catchup=True,
     description="Obtiene alertas CAP de AEMET OpenData y las inserta en PostgreSQL",
     tags=["aemet", "alerts", "ingestion", "opendata"]
 ) as dag:
