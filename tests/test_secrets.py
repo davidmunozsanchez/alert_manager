@@ -232,8 +232,8 @@ class TestGitHubSecrets:
         print(f"  - Admin Email: {airflow_env.get('AIRFLOW_ADMIN_EMAIL', '(default)')}")
 
     def test_aemet_api_key_not_hardcoded(self):
-        """Verifica que AEMET_API_KEY no esté hardcoded en el código"""
-        # Buscar patrones sospechosos en archivos Python
+        """Verifica que AEMET_API_KEY no esté hardcoded en el código, configuración y docker"""
+        # Buscar patrones sospechosos en archivos Python, YAML, env, etc.
         import glob
         from pathlib import Path
 
@@ -242,20 +242,34 @@ class TestGitHubSecrets:
         ]
 
         test_folder = Path(__file__).parent.parent
-        python_files = [
-            f
-            for f in glob.glob(str(test_folder / "src" / "**" / "*.py"), recursive=True)
+        
+        # Buscar en múltiples tipos de archivos
+        files_to_check = []
+        
+        # Python files en src
+        files_to_check.extend([
+            f for f in glob.glob(str(test_folder / "src" / "**" / "*.py"), recursive=True)
             if "__pycache__" not in f
-        ]
+        ])
+        
+        # Docker files
+        files_to_check.extend(glob.glob(str(test_folder / "docker" / "*.yml")))
+        files_to_check.extend(glob.glob(str(test_folder / "docker" / "*.yaml")))
+        files_to_check.extend(glob.glob(str(test_folder / "docker-compose.yml")))
+        
+        # Archivos env
+        files_to_check.extend(glob.glob(str(test_folder / ".env*")))
 
         hardcoded_files = []
 
-        for py_file in python_files:
+        for file_path in files_to_check:
+            if not file_path or not Path(file_path).exists():
+                continue
+                
             try:
-                with open(py_file, "r", encoding="utf-8", errors="ignore") as f:
+                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                     content = f.read()
 
-                    # No buscar en comentarios
                     lines = content.split("\n")
                     for line_num, line in enumerate(lines, 1):
                         # Ignorar comentarios y prints
@@ -268,11 +282,11 @@ class TestGitHubSecrets:
                         for pattern in suspicious_patterns:
                             if pattern in line:
                                 hardcoded_files.append(
-                                    f"{py_file}:{line_num} - {line.strip()[:100]}"
+                                    f"{file_path}:{line_num} - {line.strip()[:100]}"
                                 )
 
             except Exception as e:
-                print(f"⚠️  Error revisando {py_file}: {e}")
+                print(f"⚠️  Error revisando {file_path}: {e}")
 
         assert (
             len(hardcoded_files) == 0
