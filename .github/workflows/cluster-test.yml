@@ -74,7 +74,48 @@ jobs:
           PGPASSWORD: postgres
         run: |
           echo "🔧 Instalando dependencias..."
-          sudo apt-get update && sudo apt-get install -y postgresql-client jq 2>&1 | tail -5
+          sudo apt-get update && sudo apt-get install -y postgresql-client jq curl 2>&1 | tail -5
+          
+          echo ""
+          echo "📍 === VERIFICANDO BASE DE DATOS ==="
+          ELAPSED=0
+          MAX_WAIT=60
+          while [ $ELAPSED -lt $MAX_WAIT ]; do
+            if psql -h localhost -p 5432 -U postgres -d alert_manager -c "SELECT 1;" 2>/dev/null; then
+              echo "✅ PostgreSQL disponible"
+              break
+            fi
+            echo "⏳ PostgreSQL no disponible, reintentando en 3s..."
+            sleep 3
+            ELAPSED=$((ELAPSED + 3))
+          done
+          
+          if [ $ELAPSED -ge $MAX_WAIT ]; then
+            echo "❌ PostgreSQL no está disponible después de 60s"
+            exit 1
+          fi
+          
+          echo ""
+          echo "📍 === VERIFICANDO ESTADO DEL DAG EN AIRFLOW ==="
+          
+          # Intentar obtener info del DAG vía API de Airflow
+          DAG_RESPONSE=$(curl -s "http://localhost:8080/api/v1/dags/aemet_alerts_ingestion" 2>/dev/null || echo "{}")
+          
+          if echo "$DAG_RESPONSE" | jq . >/dev/null 2>&1; then
+            echo "✅ DAG encontrado en Airflow"
+            echo "$DAG_RESPONSE" | jq '{dag_id, is_paused, schedule_interval, last_parsed_time}' 2>/dev/null || true
+            
+            # Obtener últimas ejecuciones
+            echo ""
+            echo "🔄 Últimas ejecuciones del DAG:"
+            RUNS=$(curl -s "http://localhost:8080/api/v1/dags/aemet_alerts_ingestion/dagRuns?limit=3" 2>/dev/null || echo "{}")
+            echo "$RUNS" | jq '.dag_runs[] | {execution_date, state, start_date, end_date}' 2>/dev/null || true
+          else
+            echo "⚠️  No se pudo acceder a API de Airflow (es normal si aún está inicializando)"
+          fi
+          
+          echo ""
+          echo "📍 === VERIFICANDO ALERTAS EN BASE DE DATOS ==="
           
           echo "🧹 Limpiando alertas previas (estado inicial)..."
           psql -h localhost -p 5432 -U postgres -d alert_manager -c "DELETE FROM alerts;" 2>/dev/null || echo "⚠️ Tabla podría no existir aún"
@@ -84,7 +125,6 @@ jobs:
           
           echo ""
           echo "⏳ Esperando a que el DAG se ejecute (máximo 320 segundos)..."
-          echo "   El DAG está configurado para ejecutarse cada 15 minutos."
           
           ELAPSED=0
           MAX_WAIT=320
@@ -111,15 +151,30 @@ jobs:
               exit 0
             fi
             
-            echo "   [$((ELAPSED/$INTERVAL))] Tiempo: ${ELAPSED}s | Alertas: $CURRENT_COUNT"
+            # Mostrar estado cada 30 segundos
+            if [ $((ELAPSED % 30)) -eq 0 ]; then
+              echo "   [$((ELAPSED/$INTERVAL))] Tiempo: ${ELAPSED}s | Alertas: $CURRENT_COUNT"
+              
+              # Mostrar estado del scheduler
+              SCHEDULER_STATUS=$(docker ps --filter "name=airflow-scheduler" --format "{{.Status}}" 2>/dev/null || echo "N/A")
+              echo "   📦 Scheduler: $SCHEDULER_STATUS"
+            fi
+            
             sleep $INTERVAL
             ELAPSED=$((ELAPSED + INTERVAL))
           done
           
           echo ""
           echo "⚠️ DAG no se ejecutó en el tiempo esperado (${MAX_WAIT}s)"
-          echo "   Esto es normal si la API de AEMET no está disponible"
-          echo "   El DAG usa datos demo si no hay clave API"
+          echo ""
+          echo "📋 Estados de contenedores:"
+          docker ps --filter "name=alert_manager" --format "table {{.Names}}\t{{.Status}}" 2>/dev/null || true
+          
+          echo ""
+          echo "💡 Si las alertas no se insertaron:"
+          echo "   1. Revisa logs del scheduler: docker logs alert_manager-airflow-scheduler-1"
+          echo "   2. Accede a Airflow UI: http://localhost:8080"
+          echo "   3. Verifica si AEMET_API_KEY está configurada correctamente"
 
       - name: Stop cluster
         if: always()
