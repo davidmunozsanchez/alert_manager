@@ -113,8 +113,28 @@ jobs:
 
       - name: Run secrets tests
         env:
-          # Los secrets se inyectan aquí en GitHub Actions
+          # Secrets requeridos
           AEMET_API_KEY: ${{ secrets.AEMET_API_KEY }}
+          # Secrets de PostgreSQL
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+          # Secrets de Airflow DB
+          AIRFLOW_DB_USER: ${{ secrets.AIRFLOW_DB_USER }}
+          AIRFLOW_DB_PASSWORD: ${{ secrets.AIRFLOW_DB_PASSWORD }}
+          AIRFLOW_DB_NAME: ${{ secrets.AIRFLOW_DB_NAME }}
+          # Secrets de Airflow
+          AIRFLOW_FERNET_KEY: ${{ secrets.AIRFLOW_FERNET_KEY }}
+          AIRFLOW_ADMIN_USER: ${{ secrets.AIRFLOW_ADMIN_USER }}
+          AIRFLOW_ADMIN_PASSWORD: ${{ secrets.AIRFLOW_ADMIN_PASSWORD }}
+          AIRFLOW_ADMIN_EMAIL: ${{ secrets.AIRFLOW_ADMIN_EMAIL }}
+          AIRFLOW_WEBSERVER_SECRET_KEY: ${{ secrets.AIRFLOW_WEBSERVER_SECRET_KEY }}
+          # Secrets opcionales
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SEQ_ADMIN_PASSWORD_HASH: ${{ secrets.SEQ_ADMIN_PASSWORD_HASH }}
+          LOG_LEVEL: ${{ secrets.LOG_LEVEL }}
+          DISABLE_AUTH: ${{ secrets.DISABLE_AUTH }}
+          ENVIRONMENT: ${{ secrets.ENVIRONMENT }}
         run: |
           poetry run pytest -v tests/test_secrets.py
 
@@ -126,6 +146,22 @@ jobs:
     env:
       CI: "1"                 # activa esperas extendidas en tests
       SKIP_AIRFLOW_TEST: "1"  # evita probar UI de Airflow aquí para mayor estabilidad
+      # Secrets de la aplicación
+      AEMET_API_KEY: ${{ secrets.AEMET_API_KEY }}
+      POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+      AIRFLOW_DB_USER: ${{ secrets.AIRFLOW_DB_USER }}
+      AIRFLOW_DB_PASSWORD: ${{ secrets.AIRFLOW_DB_PASSWORD }}
+      AIRFLOW_DB_NAME: ${{ secrets.AIRFLOW_DB_NAME }}
+      AIRFLOW_FERNET_KEY: ${{ secrets.AIRFLOW_FERNET_KEY }}
+      AIRFLOW_ADMIN_USER: ${{ secrets.AIRFLOW_ADMIN_USER }}
+      AIRFLOW_ADMIN_PASSWORD: ${{ secrets.AIRFLOW_ADMIN_PASSWORD }}
+      AIRFLOW_ADMIN_EMAIL: ${{ secrets.AIRFLOW_ADMIN_EMAIL }}
+      AIRFLOW_WEBSERVER_SECRET_KEY: ${{ secrets.AIRFLOW_WEBSERVER_SECRET_KEY }}
+      LOG_LEVEL: ${{ secrets.LOG_LEVEL }}
+      DISABLE_AUTH: ${{ secrets.DISABLE_AUTH }}
+      ENVIRONMENT: ${{ secrets.ENVIRONMENT }}
     steps:
       - name: Checkout del Código
         uses: actions/checkout@v4
@@ -185,8 +221,21 @@ jobs:
 
       - name: Run DAG Tests
         env:
-          # Inyectar AEMET_API_KEY para los tests
+          # Aemet
           AEMET_API_KEY: ${{ secrets.AEMET_API_KEY }}
+          # Postgres
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+          # Airflow
+          AIRFLOW_DB_USER: ${{ secrets.AIRFLOW_DB_USER }}
+          AIRFLOW_DB_PASSWORD: ${{ secrets.AIRFLOW_DB_PASSWORD }}
+          AIRFLOW_DB_NAME: ${{ secrets.AIRFLOW_DB_NAME }}
+          AIRFLOW_FERNET_KEY: ${{ secrets.AIRFLOW_FERNET_KEY }}
+          AIRFLOW_ADMIN_USER: ${{ secrets.AIRFLOW_ADMIN_USER }}
+          AIRFLOW_ADMIN_PASSWORD: ${{ secrets.AIRFLOW_ADMIN_PASSWORD }}
+          AIRFLOW_ADMIN_EMAIL: ${{ secrets.AIRFLOW_ADMIN_EMAIL }}
+          AIRFLOW_WEBSERVER_SECRET_KEY: ${{ secrets.AIRFLOW_WEBSERVER_SECRET_KEY }}
         run: poetry run pytest -v tests/test_dags.py
 
   # Tests CRUD existentes (se mantienen)

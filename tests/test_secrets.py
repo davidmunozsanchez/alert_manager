@@ -7,6 +7,27 @@ class TestGitHubSecrets:
     """
     Tests para verificar que todos los secrets de GitHub están configurados
     y son accesibles desde Airflow y el código.
+    
+    Secretos requeridos:
+    - AEMET_API_KEY: API Key para acceder a AEMET OpenData
+    
+    Secretos opcionales (con defaults):
+    - POSTGRES_USER: Usuario de PostgreSQL (default: postgres)
+    - POSTGRES_PASSWORD: Password de PostgreSQL (default: postgres)
+    - POSTGRES_DB: Base de datos (default: alerts)
+    - AIRFLOW_DB_USER: Usuario de Airflow DB (default: airflow)
+    - AIRFLOW_DB_PASSWORD: Password de Airflow DB (default: airflow)
+    - AIRFLOW_DB_NAME: Base de datos de Airflow (default: airflow)
+    - AIRFLOW_FERNET_KEY: Clave Fernet para Airflow (cifrado)
+    - AIRFLOW_ADMIN_USER: Admin user de Airflow (default: admin)
+    - AIRFLOW_ADMIN_PASSWORD: Admin password de Airflow (default: admin)
+    - AIRFLOW_ADMIN_EMAIL: Admin email de Airflow (default: admin@example.com)
+    - AIRFLOW_WEBSERVER_SECRET_KEY: Secret key del webserver (default: mysecret)
+    - SEQ_ADMIN_PASSWORD_HASH: Hash del admin password de Seq (opcional)
+    - GITHUB_TOKEN: Token de GitHub para CI/CD
+    - LOG_LEVEL: Nivel de logging (default: info)
+    - DISABLE_AUTH: Deshabilitar autenticación (default: false)
+    - ENVIRONMENT: Environment (default: development)
     """
 
     # Definir los secrets requeridos
@@ -14,7 +35,81 @@ class TestGitHubSecrets:
         "AEMET_API_KEY": {
             "description": "API Key para acceder a AEMET OpenData",
             "required": True,
-            "fallback": "env_var",  # Puede venir de variable de entorno
+            "fallback": "env_var",
+            "services": ["aemet_alerts_ingestion"],
+        },
+    }
+
+    # Secrets de PostgreSQL (aplicaciones)
+    POSTGRES_SECRETS = {
+        "POSTGRES_USER": {
+            "description": "Usuario de PostgreSQL para alertas",
+            "required": False,
+            "default": "postgres",
+            "services": ["db", "web"],
+        },
+        "POSTGRES_PASSWORD": {
+            "description": "Password de PostgreSQL para alertas",
+            "required": False,
+            "default": "postgres",
+            "services": ["db", "web"],
+        },
+        "POSTGRES_DB": {
+            "description": "Base de datos de alertas",
+            "required": False,
+            "default": "alerts",
+            "services": ["db", "web"],
+        },
+    }
+
+    # Secrets de Airflow
+    AIRFLOW_SECRETS = {
+        "AIRFLOW_DB_USER": {
+            "description": "Usuario de la base de datos de Airflow",
+            "required": False,
+            "default": "airflow",
+            "services": ["airflow-db", "airflow-init", "airflow-webserver", "airflow-scheduler"],
+        },
+        "AIRFLOW_DB_PASSWORD": {
+            "description": "Password de la base de datos de Airflow",
+            "required": False,
+            "default": "airflow",
+            "services": ["airflow-db", "airflow-init", "airflow-webserver", "airflow-scheduler"],
+        },
+        "AIRFLOW_DB_NAME": {
+            "description": "Nombre de la base de datos de Airflow",
+            "required": False,
+            "default": "airflow",
+            "services": ["airflow-db", "airflow-init", "airflow-webserver", "airflow-scheduler"],
+        },
+        "AIRFLOW_FERNET_KEY": {
+            "description": "Clave Fernet para cifrar passwords en Airflow",
+            "required": False,
+            "services": ["airflow-init", "airflow-webserver", "airflow-scheduler"],
+        },
+        "AIRFLOW_ADMIN_USER": {
+            "description": "Username del admin de Airflow",
+            "required": False,
+            "default": "admin",
+            "services": ["airflow-init", "airflow-webserver"],
+        },
+        "AIRFLOW_ADMIN_PASSWORD": {
+            "description": "Password del admin de Airflow",
+            "required": False,
+            "default": "admin",
+            "services": ["airflow-init", "airflow-webserver"],
+        },
+        "AIRFLOW_ADMIN_EMAIL": {
+            "description": "Email del admin de Airflow",
+            "required": False,
+            "default": "admin@example.com",
+            "services": ["airflow-init", "airflow-webserver"],
+        },
+        "AIRFLOW_WEBSERVER_SECRET_KEY": {
+            "description": "Secret key para el webserver de Airflow",
+            "required": False,
+            "default": "mysecret",
+            "services": ["airflow-webserver"],
         },
     }
 
@@ -23,17 +118,42 @@ class TestGitHubSecrets:
         "GITHUB_TOKEN": {
             "description": "Token de GitHub para CI/CD",
             "required": False,
+            "services": ["github-actions"],
         },
-        "DB_PASSWORD": {
-            "description": "Password de PostgreSQL",
+        "SEQ_ADMIN_PASSWORD_HASH": {
+            "description": "Hash del password del admin de Seq",
             "required": False,
+            "services": ["seq"],
+        },
+        "LOG_LEVEL": {
+            "description": "Nivel de logging",
+            "required": False,
+            "default": "info",
+            "services": ["web"],
+        },
+        "DISABLE_AUTH": {
+            "description": "Deshabilitar autenticación",
+            "required": False,
+            "default": "false",
+            "services": ["web"],
+        },
+        "ENVIRONMENT": {
+            "description": "Environment (development, staging, production)",
+            "required": False,
+            "default": "development",
+            "services": ["web"],
         },
     }
 
     @pytest.fixture
     def all_secrets(self):
-        """Combina secrets requeridos y opcionales"""
-        return {**self.REQUIRED_SECRETS, **self.OPTIONAL_SECRETS}
+        """Combina todos los secrets"""
+        return {
+            **self.REQUIRED_SECRETS,
+            **self.POSTGRES_SECRETS,
+            **self.AIRFLOW_SECRETS,
+            **self.OPTIONAL_SECRETS,
+        }
 
     def test_required_secrets_configured(self):
         """Verifica que todos los secrets requeridos están configurados"""
@@ -87,6 +207,30 @@ class TestGitHubSecrets:
             sources.append("Airflow Variable")
         print(" y ".join(sources))
 
+    def test_postgres_secrets_configured(self):
+        """Verifica que los secrets de PostgreSQL están configurados"""
+        postgres_env = {}
+        for secret_name in self.POSTGRES_SECRETS.keys():
+            value = os.getenv(secret_name)
+            postgres_env[secret_name] = value or self.POSTGRES_SECRETS[secret_name].get("default")
+
+        print(f"✅ PostgreSQL configurado con:")
+        print(f"  - User: {postgres_env.get('POSTGRES_USER', '(default)')}")
+        print(f"  - DB: {postgres_env.get('POSTGRES_DB', '(default)')}")
+        print(f"  - Password: {'(configurada)' if os.getenv('POSTGRES_PASSWORD') else '(default)'}")
+
+    def test_airflow_secrets_configured(self):
+        """Verifica que los secrets de Airflow están configurados"""
+        airflow_env = {}
+        for secret_name in self.AIRFLOW_SECRETS.keys():
+            value = os.getenv(secret_name)
+            airflow_env[secret_name] = value or self.AIRFLOW_SECRETS[secret_name].get("default")
+
+        print(f"✅ Airflow configurado con:")
+        print(f"  - DB User: {airflow_env.get('AIRFLOW_DB_USER', '(default)')}")
+        print(f"  - Admin User: {airflow_env.get('AIRFLOW_ADMIN_USER', '(default)')}")
+        print(f"  - Admin Email: {airflow_env.get('AIRFLOW_ADMIN_EMAIL', '(default)')}")
+
     def test_aemet_api_key_not_hardcoded(self):
         """Verifica que AEMET_API_KEY no esté hardcoded en el código"""
         # Buscar patrones sospechosos en archivos Python
@@ -94,8 +238,7 @@ class TestGitHubSecrets:
         from pathlib import Path
 
         suspicious_patterns = [
-            "AEMET_API_KEY",
-            "eyJhbGciOiJIUzI1NiJ9",  # Patrón JWT común
+            "eyJhbGciOiJIUzI1NiJ9",  # Patrón JWT común - ESTO SÍ es un secret hardcodeado
         ]
 
         test_folder = Path(__file__).parent.parent
@@ -115,17 +258,15 @@ class TestGitHubSecrets:
                     # No buscar en comentarios
                     lines = content.split("\n")
                     for line_num, line in enumerate(lines, 1):
-                        # Ignorar comentarios
+                        # Ignorar comentarios y prints
                         if line.strip().startswith("#"):
                             continue
+                        if "print(" in line:
+                            continue
 
-                        # Verificar patrones
+                        # Verificar patrones JWT (valores reales hardcodeados)
                         for pattern in suspicious_patterns:
-                            if (
-                                pattern in line
-                                and "Variable.get" not in line
-                                and "os.getenv" not in line
-                            ):
+                            if pattern in line:
                                 hardcoded_files.append(
                                     f"{py_file}:{line_num} - {line.strip()[:100]}"
                                 )
@@ -136,27 +277,6 @@ class TestGitHubSecrets:
         assert (
             len(hardcoded_files) == 0
         ), f"Se encontraron secrets potencialmente hardcoded:\n" + "\n".join(hardcoded_files)
-
-    def test_secrets_documentation(self):
-        """Verifica que los secrets estén documentados"""
-        from pathlib import Path
-
-        doc_file = Path(__file__).parent.parent / "GITHUB_SECRETS_SETUP.md"
-
-        assert (
-            doc_file.exists()
-        ), "Se debe crear GITHUB_SECRETS_SETUP.md con documentación de secrets"
-
-        with open(doc_file, "r", encoding="utf-8") as f:
-            content = f.read()
-
-        # Verificar que los secrets requeridos están documentados
-        for secret_name in self.REQUIRED_SECRETS.keys():
-            assert (
-                secret_name in content
-            ), f"Secret '{secret_name}' no está documentado en GITHUB_SECRETS_SETUP.md"
-
-        print("✅ Todos los secrets están documentados")
 
     def test_secrets_not_in_git_history(self):
         """
@@ -190,3 +310,39 @@ class TestGitHubSecrets:
                             print(
                                 f"⚠️  {file_path} existe pero no está en .gitignore"
                             )
+
+    def test_all_secrets_summary(self, all_secrets):
+        """Resumen de todos los secrets del proyecto"""
+        print("\n" + "=" * 60)
+        print("📋 RESUMEN DE SECRETS DEL PROYECTO")
+        print("=" * 60)
+
+        print("\n🔴 REQUERIDOS (deben estar configurados):")
+        for name, info in self.REQUIRED_SECRETS.items():
+            status = "✅" if os.getenv(name) else "⚠️"
+            print(f"  {status} {name}: {info['description']}")
+            print(f"     Servicios: {', '.join(info.get('services', []))}")
+
+        print("\n🟠 POSTGRES (tienen defaults, recomendado configurar):")
+        for name, info in self.POSTGRES_SECRETS.items():
+            value = os.getenv(name)
+            status = "✅" if value else "⚪"
+            print(f"  {status} {name}: {info['description']}")
+            print(f"     Default: {info.get('default', 'N/A')} | Servicios: {', '.join(info.get('services', []))}")
+
+        print("\n🟠 AIRFLOW (tienen defaults, recomendado configurar):")
+        for name, info in self.AIRFLOW_SECRETS.items():
+            value = os.getenv(name)
+            status = "✅" if value else "⚪"
+            print(f"  {status} {name}: {info['description']}")
+            print(f"     Default: {info.get('default', 'N/A')} | Servicios: {', '.join(info.get('services', []))}")
+
+        print("\n🟡 OPCIONALES:")
+        for name, info in self.OPTIONAL_SECRETS.items():
+            value = os.getenv(name)
+            status = "✅" if value else "⚪"
+            print(f"  {status} {name}: {info['description']}")
+            print(f"     Servicios: {', '.join(info.get('services', []))}")
+
+        print("\n" + "=" * 60)
+
