@@ -126,11 +126,14 @@ services:
       AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-admin}
       AIRFLOW_ADMIN_EMAIL: ${AIRFLOW_ADMIN_EMAIL:-admin@example.com}
       PYTHONPATH: /opt/airflow/infrastructure
+      AEMET_API_KEY: ${AEMET_API_KEY:-}
+      AIRFLOW_VAR_AEMET_API_KEY: ${AEMET_API_KEY:-}
     user: "0:0"
     volumes:
       - ../src/dags:/opt/airflow/dags
       - ./logs:/opt/airflow/logs
       - ../src/infrastructure/aemet_ingest.py:/opt/airflow/infrastructure/aemet_ingest.py:ro
+      - ./extraction-output:/extraction-output
       
     entrypoint: /bin/bash
     command:
@@ -163,10 +166,13 @@ services:
       AIRFLOW__WEBSERVER__WORKERS: '1'
       AIRFLOW__WEBSERVER__WORKER_REFRESH_INTERVAL: '0'
       PYTHONPATH: /opt/airflow/infrastructure
+      AEMET_API_KEY: ${AEMET_API_KEY:-}
+      AIRFLOW_VAR_AEMET_API_KEY: ${AEMET_API_KEY:-}
     volumes:
       - ../src/dags:/opt/airflow/dags
       - ./logs:/opt/airflow/logs
       - ../src/infrastructure/aemet_ingest.py:/opt/airflow/infrastructure/aemet_ingest.py:ro
+      - ./extraction-output:/extraction-output
     ports:
       - "8080:8080"
     command: webserver
@@ -196,12 +202,46 @@ services:
       AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
       AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
       PYTHONPATH: /opt/airflow/infrastructure
+      AEMET_API_KEY: ${AEMET_API_KEY:-}
+      AIRFLOW_VAR_AEMET_API_KEY: ${AEMET_API_KEY:-}
     volumes:
       - ../src/dags:/opt/airflow/dags
       - ./logs:/opt/airflow/logs
       - ../src/infrastructure/aemet_ingest.py:/opt/airflow/infrastructure/aemet_ingest.py:ro
-    command: scheduler
+      - ./extraction-output:/extraction-output
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        exec airflow scheduler
     restart: on-failure
+
+  # 🎭 Playwright Extractor - Extracción web de DGT
+  playwright-extractor:
+    image: mcr.microsoft.com/playwright:v1.57.0-jammy
+    container_name: playwright_extractor
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ../src/scripts:/app/scripts:ro
+      - ./extraction-output:/extraction-output
+    environment:
+      EXTRACTION_OUTPUT: /extraction-output
+      PYTHONUNBUFFERED: "1"
+    working_dir: /app/scripts
+    command: >
+      sh -c "
+        apt-get update && apt-get install -y python3 python3-pip &&
+        pip install --no-cache-dir playwright asyncio &&
+        while true; do
+          echo '[Playwright] Iniciando extracción a las' $$(date) &&
+          python3 extract_dgt_markers.py &&
+          echo '[Playwright] Extracción completada. Esperando 15 minutos...' &&
+          sleep 900;
+        done
+      "
+    restart: unless-stopped
 
   # 🔍 Log Tester - Para verificar Seq correctamente
   log-tester:

@@ -3,9 +3,9 @@ name: Cluster Test
 on:
   workflow_dispatch:
   push:
-    branches: ["main", "hito4"]
+    branches: ["main", "hito5"]
   pull_request:
-    branches: ["main", "hito4"]
+    branches: ["main", "hito5"]
 
 jobs:
   test-cluster:
