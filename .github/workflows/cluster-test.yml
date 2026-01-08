@@ -89,6 +89,10 @@ jobs:
           docker ps -a
           
           echo ""
+          echo "🔍 Contenedores en ejecución:"
+          docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+          
+          echo ""
           echo "📍 === VERIFICANDO BASE DE DATOS ==="
           ELAPSED=0
           MAX_WAIT=120
@@ -140,6 +144,15 @@ jobs:
             echo ""
             echo "📊 Tablas existentes en alert_manager:"
             docker exec docker-db-1 psql -U postgres -d alert_manager -c "\dt" 2>/dev/null || true
+            
+            echo ""
+            echo "📋 === LOGS DE LA APLICACIÓN FASTAPI ==="
+            docker logs alert_manager-web-1 2>/dev/null | tail -50 || echo "No se pudo obtener logs"
+            
+            echo ""
+            echo "📋 === LOGS DEL SCHEDULER DE AIRFLOW ==="
+            docker logs alert_manager-airflow-scheduler-1 2>/dev/null | tail -30 || echo "No se pudo obtener logs"
+            
             exit 1
           fi
           
