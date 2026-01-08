@@ -476,6 +476,7 @@ def get_statistics(
         logger.error(f"Error getting statistics: {str(e)}")
         raise HTTPException(status_code=500, detail="Error interno del servidor")
 
+
 # Endpoints simplificados para debug
 @router.get("/debug/simple")
 def debug_simple():
