@@ -2,6 +2,7 @@ import os
 import json
 import pytest
 import requests
+import time
 from pathlib import Path
 from datetime import datetime
 
@@ -12,6 +13,9 @@ class TestAEMETIntegration:
     Requiere que:
     - La API de AEMET sea accesible
     - AEMET_API_KEY esté configurada en GitHub Secrets o env
+    
+    ⚠️  IMPORTANTE: AEMET tiene rate limit de ~10 peticiones por minuto
+    Se usan fixtures para cachear datos y evitar múltiples peticiones
     """
 
     @pytest.fixture(scope="class")
@@ -22,38 +26,92 @@ class TestAEMETIntegration:
             pytest.skip("AEMET_API_KEY no está configurada")
         return api_key
 
-    def test_aemet_api_connectivity(self, aemet_api_key):
-        """Test 1: Verificar que podemos conectar con la API de AEMET"""
+    @staticmethod
+    def _request_with_retry(url, headers, timeout=30, max_retries=3, backoff_factor=2):
+        """Realizar petición a AEMET con reintentos y backoff exponencial"""
+        last_error = None
+        
+        for attempt in range(max_retries):
+            try:
+                response = requests.get(url, headers=headers, timeout=timeout)
+                
+                # Si es 429, esperar y reintentar
+                if response.status_code == 429:
+                    if attempt < max_retries - 1:
+                        wait_time = backoff_factor ** attempt
+                        print(f"⏳ Rate limit (429). Esperando {wait_time}s antes de reintentar...")
+                        time.sleep(wait_time)
+                        continue
+                
+                return response
+            except Exception as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    wait_time = backoff_factor ** attempt
+                    time.sleep(wait_time)
+                    continue
+                raise
+        
+        if last_error:
+            raise last_error
+
+    @pytest.fixture(scope="class")
+    def aemet_auth_response(self, aemet_api_key):
+        """Cachear la respuesta de autenticación para todos los tests"""
         url = "https://opendata.aemet.es/opendata/api/avisos_cap/ultimoelaborado/area/esp"
         
-        response = requests.get(
+        response = self._request_with_retry(
             url,
             headers={"api_key": aemet_api_key},
             timeout=30
         )
         
-        print(f"\n✅ Respuesta AEMET: {response.status_code}")
-        assert response.status_code == 200, (
-            f"❌ Error conectando con AEMET: {response.status_code}\n"
-            f"Respuesta: {response.text}"
+        print(f"\n📡 Respuesta AEMET cacheada: {response.status_code}")
+        return response
+
+    @pytest.fixture(scope="class")
+    def aemet_tar_data(self, aemet_auth_response):
+        """Cachear el archivo TAR descargado de AEMET"""
+        if aemet_auth_response.status_code != 200:
+            pytest.skip(f"No se pudo obtener datos de AEMET: {aemet_auth_response.status_code}")
+        
+        data_url = aemet_auth_response.json().get("datos")
+        if not data_url:
+            pytest.skip("AEMET no retornó URL de datos")
+        
+        # Descargar con reintentos
+        tar_response = self._request_with_retry(data_url, headers={}, timeout=60)
+        
+        if tar_response.status_code != 200:
+            pytest.skip(f"Error descargando TAR: {tar_response.status_code}")
+        
+        return tar_response.content
+
+    def test_aemet_api_connectivity(self, aemet_auth_response):
+        """Test 1: Verificar que podemos conectar con la API de AEMET"""
+        
+        print(f"\n✅ Respuesta AEMET: {aemet_auth_response.status_code}")
+        
+        # Tolerante con rate limit
+        assert aemet_auth_response.status_code in [200, 429], (
+            f"❌ Error inesperado: {aemet_auth_response.status_code}"
         )
         
-        data = response.json()
+        if aemet_auth_response.status_code == 429:
+            pytest.skip("⏳ API de AEMET: rate limit excedido. Reintentar en 1 minuto.")
+        
+        data = aemet_auth_response.json()
         assert "descripcion" in data, "❌ Respuesta AEMET no contiene descripción"
         print(f"✅ Descripción: {data.get('descripcion')}")
 
-    def test_aemet_api_returns_data_url(self, aemet_api_key):
+    def test_aemet_api_returns_data_url(self, aemet_auth_response):
         """Test 2: Verificar que AEMET retorna una URL de descarga"""
-        url = "https://opendata.aemet.es/opendata/api/avisos_cap/ultimoelaborado/area/esp"
         
-        response = requests.get(
-            url,
-            headers={"api_key": aemet_api_key},
-            timeout=30
-        )
+        if aemet_auth_response.status_code == 429:
+            pytest.skip("⏳ API de AEMET: rate limit excedido")
         
-        assert response.status_code == 200
-        data = response.json()
+        assert aemet_auth_response.status_code == 200
+        data = aemet_auth_response.json()
         
         data_url = data.get("datos")
         assert data_url, "❌ AEMET no retornó URL de datos"
@@ -62,62 +120,24 @@ class TestAEMETIntegration:
         # Verificar que es una URL válida
         assert data_url.startswith("http"), "❌ URL de datos no válida"
 
-    def test_aemet_api_data_downloadable(self, aemet_api_key):
+    def test_aemet_api_data_downloadable(self, aemet_tar_data):
         """Test 3: Verificar que podemos descargar el archivo TAR de AEMET"""
-        url = "https://opendata.aemet.es/opendata/api/avisos_cap/ultimoelaborado/area/esp"
         
-        # Obtener URL de datos
-        response = requests.get(
-            url,
-            headers={"api_key": aemet_api_key},
-            timeout=30
-        )
-        
-        assert response.status_code == 200
-        data = response.json()
-        data_url = data.get("datos")
-        
-        assert data_url, "❌ No hay URL de datos"
-        
-        # Descargar archivo TAR
-        tar_response = requests.get(data_url, timeout=60)
-        
-        assert tar_response.status_code == 200, (
-            f"❌ Error descargando TAR: {tar_response.status_code}"
-        )
-        
-        # Verificar que es un archivo TAR
-        assert len(tar_response.content) > 0, "❌ Archivo TAR vacío"
-        assert tar_response.content[:2] in [b'\x1f\x8b', b'BZ'], (
+        assert len(aemet_tar_data) > 0, "❌ Archivo TAR vacío"
+        assert aemet_tar_data[:2] in [b'\x1f\x8b', b'BZ'], (
             "❌ El contenido no es un archivo comprimido válido (gzip/bzip2)"
         )
         
-        print(f"✅ TAR descargado: {len(tar_response.content)} bytes")
+        print(f"✅ TAR descargado: {len(aemet_tar_data)} bytes")
 
-    def test_aemet_api_tar_contains_xml(self, aemet_api_key):
+    def test_aemet_api_tar_contains_xml(self, aemet_tar_data):
         """Test 4: Verificar que el TAR contiene archivos XML"""
         import tarfile
         import io
         
-        url = "https://opendata.aemet.es/opendata/api/avisos_cap/ultimoelaborado/area/esp"
-        
-        # Obtener URL de datos
-        response = requests.get(
-            url,
-            headers={"api_key": aemet_api_key},
-            timeout=30
-        )
-        
-        data_url = response.json().get("datos")
-        
-        # Descargar TAR
-        tar_response = requests.get(data_url, timeout=60)
-        
-        # Extraer TAR
-        tar_bytes = io.BytesIO(tar_response.content)
+        tar_bytes = io.BytesIO(aemet_tar_data)
         tar = tarfile.open(fileobj=tar_bytes, mode='r:*')
         
-        # Verificar que contiene XMLs
         xml_members = [m for m in tar.getmembers() if m.name.endswith('.xml')]
         
         assert len(xml_members) > 0, (
@@ -127,31 +147,15 @@ class TestAEMETIntegration:
         print(f"✅ TAR contiene {len(xml_members)} archivos XML")
         tar.close()
 
-    def test_aemet_api_xml_parseable(self, aemet_api_key):
+    def test_aemet_api_xml_parseable(self, aemet_tar_data):
         """Test 5: Verificar que los XMLs de AEMET son parseables (formato CAP)"""
         import tarfile
         import io
         import xml.etree.ElementTree as ET
         
-        url = "https://opendata.aemet.es/opendata/api/avisos_cap/ultimoelaborado/area/esp"
-        
-        # Obtener URL de datos
-        response = requests.get(
-            url,
-            headers={"api_key": aemet_api_key},
-            timeout=30
-        )
-        
-        data_url = response.json().get("datos")
-        
-        # Descargar TAR
-        tar_response = requests.get(data_url, timeout=60)
-        
-        # Extraer TAR
-        tar_bytes = io.BytesIO(tar_response.content)
+        tar_bytes = io.BytesIO(aemet_tar_data)
         tar = tarfile.open(fileobj=tar_bytes, mode='r:*')
         
-        # Procesar primer XML
         xml_members = [m for m in tar.getmembers() if m.name.endswith('.xml')]
         
         assert len(xml_members) > 0, "❌ No hay XMLs"
@@ -179,31 +183,15 @@ class TestAEMETIntegration:
         
         tar.close()
 
-    def test_aemet_api_extracts_alert_data(self, aemet_api_key):
+    def test_aemet_api_extracts_alert_data(self, aemet_tar_data):
         """Test 6: Verificar que se pueden extraer datos de alertas del XML"""
         import tarfile
         import io
         import xml.etree.ElementTree as ET
         
-        url = "https://opendata.aemet.es/opendata/api/avisos_cap/ultimoelaborado/area/esp"
-        
-        # Obtener URL de datos
-        response = requests.get(
-            url,
-            headers={"api_key": aemet_api_key},
-            timeout=30
-        )
-        
-        data_url = response.json().get("datos")
-        
-        # Descargar TAR
-        tar_response = requests.get(data_url, timeout=60)
-        
-        # Extraer TAR
-        tar_bytes = io.BytesIO(tar_response.content)
+        tar_bytes = io.BytesIO(aemet_tar_data)
         tar = tarfile.open(fileobj=tar_bytes, mode='r:*')
         
-        # Procesar XMLs
         xml_members = [m for m in tar.getmembers() if m.name.endswith('.xml')]
         
         alerts_extracted = 0
@@ -236,7 +224,7 @@ class TestAEMETIntegration:
         print(f"✅ Se extrajeron {alerts_extracted} alertas correctamente")
         tar.close()
 
-    def test_aemet_api_end_to_end(self, aemet_api_key):
+    def test_aemet_api_end_to_end(self, aemet_auth_response, aemet_tar_data):
         """Test 7: Test END-TO-END completo - simular exactamente lo que hace el DAG"""
         import tarfile
         import io
@@ -246,16 +234,8 @@ class TestAEMETIntegration:
         
         # PASO 1: Autenticación
         print("1️⃣  Paso 1: Autenticación con AEMET...")
-        url = "https://opendata.aemet.es/opendata/api/avisos_cap/ultimoelaborado/area/esp"
-        
-        auth_response = requests.get(
-            url,
-            headers={"api_key": aemet_api_key},
-            timeout=30
-        )
-        
-        assert auth_response.status_code == 200, "❌ Autenticación fallida"
-        auth_data = auth_response.json()
+        assert aemet_auth_response.status_code == 200, "❌ Autenticación fallida"
+        auth_data = aemet_auth_response.json()
         print(f"   ✅ Autenticación OK: {auth_data.get('descripcion')}")
         
         # PASO 2: Obtener URL de descarga
@@ -264,15 +244,14 @@ class TestAEMETIntegration:
         assert data_url, "❌ No hay URL de datos"
         print(f"   ✅ URL obtenida: {data_url[:60]}...")
         
-        # PASO 3: Descargar TAR
-        print("3️⃣  Paso 3: Descargar archivo TAR...")
-        tar_response = requests.get(data_url, timeout=60)
-        assert tar_response.status_code == 200, "❌ Error descargando TAR"
-        print(f"   ✅ TAR descargado: {len(tar_response.content)} bytes")
+        # PASO 3: Descargar TAR (ya cacheado en fixture)
+        print("3️⃣  Paso 3: Usar archivo TAR descargado...")
+        assert len(aemet_tar_data) > 0, "❌ TAR vacío"
+        print(f"   ✅ TAR disponible: {len(aemet_tar_data)} bytes")
         
         # PASO 4: Extraer y procesar XMLs
         print("4️⃣  Paso 4: Extraer y procesar XMLs...")
-        tar_bytes = io.BytesIO(tar_response.content)
+        tar_bytes = io.BytesIO(aemet_tar_data)
         tar = tarfile.open(fileobj=tar_bytes, mode='r:*')
         
         xml_members = [m for m in tar.getmembers() if m.name.endswith('.xml')]
@@ -327,3 +306,4 @@ class TestAEMETIntegration:
         print("\n🎉 TEST END-TO-END COMPLETADO EXITOSAMENTE")
         print(f"   - Alertas obtenidas: {len(alerts_list)}")
         print(f"   - Fecha: {datetime.now().isoformat()}")
+
