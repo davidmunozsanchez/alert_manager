@@ -50,16 +50,8 @@ jobs:
           POSTGRES_PASSWORD: postgres
           DB_NAME: alert_manager
         run: |
-          # Crear .env con los secrets si existen
-          cat > docker/.env << EOF
-          AEMET_API_KEY=${AEMET_API_KEY}
-          POSTGRES_USER=${POSTGRES_USER}
-          POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-          DB_NAME=${DB_NAME}
-          EOF
-          
           # --no-build fuerza a usar la imagen descargada
-          docker compose -f docker/docker-compose.yml up -d --no-build
+          cd docker && docker compose -f docker-compose.yml up -d --no-build
 
       - name: Wait for services to be ready
         run: |
@@ -132,18 +124,18 @@ jobs:
       - name: Stop cluster
         if: always()
         run: |
-          docker compose -f docker/docker-compose.yml down -v
+          cd docker && docker compose down -v
       
       - name: Show Microservice Logs on failure
         if: failure()
         run: |
           echo "📋 === LOGS DEL SCHEDULER ==="
-          docker compose -f docker/docker-compose.yml logs airflow-scheduler | tail -50 || true
+          cd docker && docker compose logs airflow-scheduler | tail -50 || true
           
           echo ""
           echo "📋 === LOGS DE LA API ==="
-          docker compose -f docker/docker-compose.yml logs airflow-webserver | tail -50 || true
+          cd docker && docker compose logs airflow-webserver | tail -50 || true
           
           echo ""
           echo "📋 === LOGS DE POSTGRES ==="
-          docker compose -f docker/docker-compose.yml logs postgres | tail -30 || true
+          cd docker && docker compose logs postgres | tail -30 || true
