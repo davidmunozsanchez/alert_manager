@@ -1,0 +1,143 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airflow-webserver
+  namespace: alert-manager
+  labels:
+    app: airflow-webserver
+    component: airflow
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: airflow-webserver
+  template:
+    metadata:
+      labels:
+        app: airflow-webserver
+        component: airflow
+    spec:
+      initContainers:
+        # Esperar a que la DB de Airflow esté lista
+        - name: wait-for-db
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              echo "Esperando a Airflow DB..."
+              until nc -z airflow-db 5432; do
+                echo "DB no disponible, reintentando en 2s..."
+                sleep 2
+              done
+              echo "DB disponible!"
+        # Inicializar Airflow DB y crear usuario admin
+        - name: init-airflow
+          image: apache/airflow:2.9.1
+          command:
+            - bash
+            - -c
+            - |
+              echo "Inicializando Airflow DB..."
+              airflow db migrate
+              
+              echo "Creando usuario admin..."
+              airflow users create \
+                --username admin \
+                --password admin \
+                --firstname Admin \
+                --lastname User \
+                --role Admin \
+                --email admin@example.com || echo "Usuario ya existe"
+              
+              echo "Airflow inicializado!"
+          env:
+            - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+              value: "postgresql://$(AIRFLOW_DB_USER):$(POSTGRES_PASSWORD)@airflow-db:5432/$(AIRFLOW_DB_NAME)"
+            - name: AIRFLOW_DB_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: alert-manager-config
+                  key: AIRFLOW_DB_USER
+            - name: AIRFLOW_DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: alert-manager-config
+                  key: AIRFLOW_DB_NAME
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: alert-manager-secrets
+                  key: POSTGRES_PASSWORD
+          envFrom:
+            - configMapRef:
+                name: alert-manager-config
+      containers:
+        - name: webserver
+          image: apache/airflow:2.9.1
+          command: ["airflow", "webserver"]
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+              value: "postgresql://$(AIRFLOW_DB_USER):$(POSTGRES_PASSWORD)@airflow-db:5432/$(AIRFLOW_DB_NAME)"
+            - name: AIRFLOW_DB_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: alert-manager-config
+                  key: AIRFLOW_DB_USER
+            - name: AIRFLOW_DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: alert-manager-config
+                  key: AIRFLOW_DB_NAME
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: alert-manager-secrets
+                  key: POSTGRES_PASSWORD
+            - name: AEMET_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: alert-manager-secrets
+                  key: AEMET_API_KEY
+            - name: AIRFLOW__CORE__FERNET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: alert-manager-secrets
+                  key: AIRFLOW__CORE__FERNET_KEY
+          envFrom:
+            - configMapRef:
+                name: alert-manager-config
+          volumeMounts:
+            - name: dags
+              mountPath: /opt/airflow/dags
+              readOnly: true
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: dags
+          configMap:
+            name: airflow-dags

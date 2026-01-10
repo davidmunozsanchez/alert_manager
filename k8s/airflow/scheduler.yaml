@@ -1,0 +1,109 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airflow-scheduler
+  namespace: alert-manager
+  labels:
+    app: airflow-scheduler
+    component: airflow
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: airflow-scheduler
+  template:
+    metadata:
+      labels:
+        app: airflow-scheduler
+        component: airflow
+    spec:
+      initContainers:
+        # Esperar a que el webserver esté listo (ya habrá inicializado la DB)
+        - name: wait-for-webserver
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              echo "Esperando a Airflow Webserver..."
+              until nc -z airflow-webserver 8080; do
+                echo "Webserver no disponible, reintentando en 5s..."
+                sleep 5
+              done
+              echo "Webserver disponible!"
+      containers:
+        - name: scheduler
+          image: apache/airflow:2.9.1
+          command: ["airflow", "scheduler"]
+          env:
+            - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+              value: "postgresql://$(AIRFLOW_DB_USER):$(POSTGRES_PASSWORD)@airflow-db:5432/$(AIRFLOW_DB_NAME)"
+            - name: AIRFLOW_DB_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: alert-manager-config
+                  key: AIRFLOW_DB_USER
+            - name: AIRFLOW_DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: alert-manager-config
+                  key: AIRFLOW_DB_NAME
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: alert-manager-secrets
+                  key: POSTGRES_PASSWORD
+            - name: AEMET_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: alert-manager-secrets
+                  key: AEMET_API_KEY
+            - name: AIRFLOW__CORE__FERNET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: alert-manager-secrets
+                  key: AIRFLOW__CORE__FERNET_KEY
+            # Conexión a la DB principal para insertar alertas
+            - name: ALERT_DB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: alert-manager-config
+                  key: POSTGRES_HOST
+            - name: ALERT_DB_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: alert-manager-config
+                  key: POSTGRES_PORT
+            - name: ALERT_DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: alert-manager-config
+                  key: POSTGRES_DB
+            - name: ALERT_DB_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: alert-manager-config
+                  key: POSTGRES_USER
+            - name: ALERT_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: alert-manager-secrets
+                  key: POSTGRES_PASSWORD
+          envFrom:
+            - configMapRef:
+                name: alert-manager-config
+          volumeMounts:
+            - name: dags
+              mountPath: /opt/airflow/dags
+              readOnly: true
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+      volumes:
+        - name: dags
+          configMap:
+            name: airflow-dags

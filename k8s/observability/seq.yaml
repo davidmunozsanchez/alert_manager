@@ -1,0 +1,108 @@
+# Seq - Plataforma de logs estructurados
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: seq-pvc
+  namespace: alert-manager
+  labels:
+    app: seq
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  storageClassName: oci-bv  # Oracle Cloud Block Volume
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: seq
+  namespace: alert-manager
+  labels:
+    app: seq
+    component: observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: seq
+  template:
+    metadata:
+      labels:
+        app: seq
+        component: observability
+    spec:
+      containers:
+        - name: seq
+          image: datalust/seq:2024.3
+          ports:
+            - containerPort: 80
+              name: ui
+            - containerPort: 5341
+              name: ingestion
+          env:
+            - name: ACCEPT_EULA
+              value: "Y"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "250m"
+          volumeMounts:
+            - name: seq-data
+              mountPath: /data
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 5
+      volumes:
+        - name: seq-data
+          persistentVolumeClaim:
+            claimName: seq-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: seq
+  namespace: alert-manager
+  labels:
+    app: seq
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 80
+      name: ui
+    - port: 5341
+      targetPort: 5341
+      name: ingestion
+  selector:
+    app: seq
+---
+# Servicio LoadBalancer para acceder a Seq UI externamente
+apiVersion: v1
+kind: Service
+metadata:
+  name: seq-external
+  namespace: alert-manager
+  labels:
+    app: seq
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 5341
+      targetPort: 80
+      name: ui
+  selector:
+    app: seq

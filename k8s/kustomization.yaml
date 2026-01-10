@@ -1,0 +1,45 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: alert-manager
+
+# Recursos base
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  # NO incluir secrets.yaml - se crean via GitHub Actions
+  
+  # PostgreSQL (DB principal)
+  - postgres/pvc.yaml
+  - postgres/deployment.yaml
+  - postgres/service.yaml
+  
+  # API FastAPI
+  - api/deployment.yaml
+  - api/service.yaml
+  - api/ingress.yaml
+  
+  # Airflow
+  - airflow/airflow-db.yaml
+  - airflow/webserver.yaml
+  - airflow/scheduler.yaml
+  - airflow/service.yaml
+  
+  # Observabilidad
+  - observability/seq.yaml
+
+# Generar ConfigMap con los DAGs desde el código fuente
+configMapGenerator:
+  - name: airflow-dags
+    files:
+      - aemet_alerts_ingestion.py=../src/dags/aemet_alerts_ingestion.py
+
+# Labels comunes para todos los recursos
+commonLabels:
+  app.kubernetes.io/part-of: alert-manager
+  app.kubernetes.io/managed-by: kustomize
+
+# Configuración de imágenes
+images:
+  - name: ghcr.io/davidmunozsanchez/alert_manager
+    newTag: latest
