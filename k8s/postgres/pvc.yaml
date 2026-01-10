@@ -12,4 +12,4 @@ spec:
   resources:
     requests:
       storage: 5Gi
-  storageClassName: oci-bv  # Oracle Cloud Block Volume (gratuito hasta 200GB)
+  storageClassName: oci  # Oracle Cloud default storage class
