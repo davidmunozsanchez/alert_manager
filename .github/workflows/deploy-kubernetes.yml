@@ -85,6 +85,7 @@ jobs:
         run: |
           mkdir -p ~/.oci
           echo "${{ secrets.OCI_PRIVATE_KEY }}" > ~/.oci/oci_api_key.pem
+          echo "OCI_API_KEY" >> ~/.oci/oci_api_key.pem
           chmod 600 ~/.oci/oci_api_key.pem
           cat > ~/.oci/config << EOF
           [DEFAULT]
@@ -94,8 +95,14 @@ jobs:
           region=${{ env.OCI_REGION }}
           key_file=~/.oci/oci_api_key.pem
           EOF
+          chmod 600 ~/.oci/config
+        env:
+          OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING: "True"
+          SUPPRESS_LABEL_WARNING: "True"
 
       - name: Configure kubectl for OKE
+        env:
+          OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING: "True"
         run: |
           mkdir -p ~/.kube
           oci ce cluster create-kubeconfig \
@@ -123,6 +130,7 @@ jobs:
             --from-literal=AIRFLOW_ADMIN_PASSWORD='${{ secrets.AIRFLOW_ADMIN_PASSWORD }}' \
             --from-literal=AEMET_API_KEY='${{ secrets.AEMET_API_KEY }}' \
             --from-literal=FIREBASE_CREDENTIALS='${{ secrets.FIREBASE_CREDENTIALS }}' \
+            --from-literal=AIRFLOW__CORE__FERNET_KEY='${{ secrets.AIRFLOW_FERNET_KEY }}' \
             --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Create/Update Registry Secret
@@ -155,11 +163,27 @@ jobs:
 
       - name: Wait for deployments
         run: |
-          kubectl rollout status deployment/postgres -n ${{ env.NAMESPACE }} --timeout=300s
-          kubectl rollout status deployment/alert-manager-api -n ${{ env.NAMESPACE }} --timeout=300s
-          kubectl rollout status deployment/airflow-webserver -n ${{ env.NAMESPACE }} --timeout=300s
-          kubectl rollout status deployment/airflow-scheduler -n ${{ env.NAMESPACE }} --timeout=300s
-          kubectl rollout status deployment/seq -n ${{ env.NAMESPACE }} --timeout=300s
+          echo "=== Waiting for postgres ==="
+          kubectl rollout status deployment/postgres -n ${{ env.NAMESPACE }} --timeout=300s || {
+            echo "=== Postgres failed, checking status ==="
+            kubectl get pods -n ${{ env.NAMESPACE }} -l app=postgres
+            kubectl describe pod -n ${{ env.NAMESPACE }} -l app=postgres
+            kubectl logs -n ${{ env.NAMESPACE }} -l app=postgres --tail=50 || true
+            exit 1
+          }
+          
+          echo "=== Waiting for API ==="
+          kubectl rollout status deployment/alert-manager-api -n ${{ env.NAMESPACE }} --timeout=300s || {
+            echo "=== API failed, checking status ==="
+            kubectl describe pod -n ${{ env.NAMESPACE }} -l app=alert-manager-api
+            kubectl logs -n ${{ env.NAMESPACE }} -l app=alert-manager-api --tail=50 || true
+            exit 1
+          }
+          
+          echo "=== Waiting for Airflow ==="
+          kubectl rollout status deployment/airflow-webserver -n ${{ env.NAMESPACE }} --timeout=300s || true
+          kubectl rollout status deployment/airflow-scheduler -n ${{ env.NAMESPACE }} --timeout=300s || true
+          kubectl rollout status deployment/seq -n ${{ env.NAMESPACE }} --timeout=300s || true
 
       - name: Get deployment status
         run: |
