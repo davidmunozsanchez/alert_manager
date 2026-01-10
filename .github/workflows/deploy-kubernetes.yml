@@ -154,7 +154,7 @@ jobs:
           kubectl create secret docker-registry ghcr-credentials \
             --namespace ${{ env.NAMESPACE }} \
             --docker-server=${{ env.REGISTRY }} \
-            --docker-username=${{ github.actor }} \
+            --docker-username=davidmunozsanchez \
             --docker-password='${{ secrets.GHCR_TOKEN }}' \
             --dry-run=client -o yaml | kubectl apply -f -
 
