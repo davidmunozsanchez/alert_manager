@@ -118,6 +118,22 @@ jobs:
           kubectl cluster-info
           kubectl get nodes
 
+      - name: Clean previous deployment
+        run: |
+          echo "=== Cleaning previous deployment ==="
+          # Eliminar todos los recursos del namespace (excepto el namespace mismo)
+          kubectl delete deployments --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          kubectl delete pods --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          kubectl delete pvc --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          kubectl delete configmaps --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          kubectl delete secrets --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          kubectl delete services --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          kubectl delete ingress --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          # Esperar a que los PVCs se eliminen completamente
+          echo "Waiting for PVCs to be deleted..."
+          sleep 30
+          echo "Cleanup complete!"
+
       - name: Create namespace if not exists
         run: |
           kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
