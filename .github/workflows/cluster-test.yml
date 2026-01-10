@@ -80,6 +80,8 @@ jobs:
       - name: Verify AEMET DAG execution
         env:
           PGPASSWORD: postgres
+          AIRFLOW_USER: ${{ secrets.AIRFLOW_ADMIN_USER }}
+          AIRFLOW_PASS: ${{ secrets.AIRFLOW_ADMIN_PASSWORD }}
         run: |
           echo "🔧 Instalando dependencias..."
           sudo apt-get update && sudo apt-get install -y postgresql-client jq curl 2>&1 | tail -5
@@ -182,8 +184,9 @@ jobs:
             docker logs docker-airflow-scheduler-1 2>/dev/null | tail -30 || true
           fi
           
-          # Intentar obtener info del DAG vía API de Airflow
-          DAG_RESPONSE=$(curl -s "http://localhost:8080/api/v1/dags/aemet_alerts_ingestion" 2>/dev/null || echo "{}")
+          # Intentar obtener info del DAG vía API de Airflow (con autenticación)
+          AIRFLOW_AUTH="${AIRFLOW_USER:-admin}:${AIRFLOW_PASS:-admin}"
+          DAG_RESPONSE=$(curl -s -u "$AIRFLOW_AUTH" "http://localhost:8080/api/v1/dags/aemet_alerts_ingestion" 2>/dev/null || echo "{}")
           
           if echo "$DAG_RESPONSE" | jq . >/dev/null 2>&1; then
             echo "✅ DAG 'aemet_alerts_ingestion' encontrado en Airflow"
@@ -194,7 +197,7 @@ jobs:
             if [ "$IS_PAUSED" = "true" ]; then
               echo ""
               echo "🔓 Despausando DAG 'aemet_alerts_ingestion'..."
-              UNPAUSE_RESPONSE=$(curl -s -X PATCH "http://localhost:8080/api/v1/dags/aemet_alerts_ingestion" \
+              UNPAUSE_RESPONSE=$(curl -s -u "$AIRFLOW_AUTH" -X PATCH "http://localhost:8080/api/v1/dags/aemet_alerts_ingestion" \
                 -H "Content-Type: application/json" \
                 -d '{"is_paused": false}' 2>/dev/null || echo "{}")
               echo "$UNPAUSE_RESPONSE" | jq '{dag_id, is_paused}' 2>/dev/null || true
@@ -203,7 +206,7 @@ jobs:
             # === PASO CLAVE: Disparar el DAG manualmente (determinista para CI) ===
             echo ""
             echo "🚀 Disparando ejecución manual del DAG..."
-            TRIGGER_RESPONSE=$(curl -s -X POST "http://localhost:8080/api/v1/dags/aemet_alerts_ingestion/dagRuns" \
+            TRIGGER_RESPONSE=$(curl -s -u "$AIRFLOW_AUTH" -X POST "http://localhost:8080/api/v1/dags/aemet_alerts_ingestion/dagRuns" \
               -H "Content-Type: application/json" \
               -d '{"dag_run_id": "ci_test_run_'"$(date +%s)"'", "logical_date": "'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'", "conf": {}}' 2>/dev/null || echo "{}")
             
@@ -222,7 +225,7 @@ jobs:
             ELAPSED=0
             MAX_WAIT_DAG=180
             while [ $ELAPSED -lt $MAX_WAIT_DAG ]; do
-              RUNS=$(curl -s "http://localhost:8080/api/v1/dags/aemet_alerts_ingestion/dagRuns?limit=5" 2>/dev/null || echo "{}")
+              RUNS=$(curl -s -u "$AIRFLOW_AUTH" "http://localhost:8080/api/v1/dags/aemet_alerts_ingestion/dagRuns?limit=5" 2>/dev/null || echo "{}")
               LATEST_STATE=$(echo "$RUNS" | jq -r '.dag_runs[0].state' 2>/dev/null || echo "unknown")
               
               if [ "$LATEST_STATE" = "success" ]; then
@@ -238,7 +241,7 @@ jobs:
                 if [ ! -z "$LAST_RUN_ID" ] && [ "$LAST_RUN_ID" != "null" ]; then
                   echo ""
                   echo "📋 Estado de tareas:"
-                  TASKS=$(curl -s "http://localhost:8080/api/v1/dags/aemet_alerts_ingestion/dagRuns/$LAST_RUN_ID/taskInstances" 2>/dev/null || echo "{}")
+                  TASKS=$(curl -s -u "$AIRFLOW_AUTH" "http://localhost:8080/api/v1/dags/aemet_alerts_ingestion/dagRuns/$LAST_RUN_ID/taskInstances" 2>/dev/null || echo "{}")
                   echo "$TASKS" | jq '.task_instances[] | {task_id, state, try_number}' 2>/dev/null || true
                 fi
                 break
@@ -263,7 +266,7 @@ jobs:
             echo "   Esperando 30s más..."
             sleep 30
             
-            DAG_RESPONSE=$(curl -s "http://localhost:8080/api/v1/dags/aemet_alerts_ingestion" 2>/dev/null || echo "{}")
+            DAG_RESPONSE=$(curl -s -u "$AIRFLOW_AUTH" "http://localhost:8080/api/v1/dags/aemet_alerts_ingestion" 2>/dev/null || echo "{}")
             if echo "$DAG_RESPONSE" | jq . >/dev/null 2>&1; then
               echo "✅ Airflow ahora disponible"
               echo "$DAG_RESPONSE" | jq '{dag_id, is_paused, schedule_interval}' 2>/dev/null || true
