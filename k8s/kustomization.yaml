@@ -28,16 +28,11 @@ resources:
   # Observabilidad
   - observability/seq.yaml
 
-# Generar ConfigMap con los DAGs desde el código fuente
-configMapGenerator:
-  - name: airflow-dags
-    files:
-      - aemet_alerts_ingestion.py=../src/dags/aemet_alerts_ingestion.py
-
 # Labels comunes para todos los recursos
-commonLabels:
-  app.kubernetes.io/part-of: alert-manager
-  app.kubernetes.io/managed-by: kustomize
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: alert-manager
+      app.kubernetes.io/managed-by: kustomize
 
 # Configuración de imágenes
 images:

@@ -134,6 +134,13 @@ jobs:
             --docker-password=${{ secrets.GITHUB_TOKEN }} \
             --dry-run=client -o yaml | kubectl apply -f -
 
+      - name: Create/Update DAGs ConfigMap
+        run: |
+          kubectl create configmap airflow-dags \
+            --namespace ${{ env.NAMESPACE }} \
+            --from-file=aemet_alerts_ingestion.py=src/dags/aemet_alerts_ingestion.py \
+            --dry-run=client -o yaml | kubectl apply -f -
+
       - name: Setup Kustomize
         uses: imranismail/setup-kustomize@v2
 
