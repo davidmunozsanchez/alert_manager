@@ -12,4 +12,4 @@ spec:
   resources:
     requests:
       storage: 5Gi
-  storageClassName: oci  # Oracle Cloud default storage class
+  storageClassName: oci-bv

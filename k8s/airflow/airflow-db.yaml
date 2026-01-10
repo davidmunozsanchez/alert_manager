@@ -12,7 +12,7 @@ spec:
   resources:
     requests:
       storage: 2Gi
-  storageClassName: oci  # Oracle Cloud default storage class
+  storageClassName: oci-bv
 ---
 apiVersion: apps/v1
 kind: Deployment
