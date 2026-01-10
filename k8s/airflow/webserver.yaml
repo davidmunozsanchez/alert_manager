@@ -20,7 +20,7 @@ spec:
       initContainers:
         # Esperar a que la DB de Airflow esté lista
         - name: wait-for-db
-          image: busybox:1.36
+          image: docker.io/library/busybox:1.36
           command:
             - sh
             - -c
@@ -33,7 +33,7 @@ spec:
               echo "DB disponible!"
         # Inicializar Airflow DB y crear usuario admin
         - name: init-airflow
-          image: apache/airflow:2.9.1
+          image: docker.io/apache/airflow:2.9.1
           command:
             - bash
             - -c
@@ -74,7 +74,7 @@ spec:
                 name: alert-manager-config
       containers:
         - name: webserver
-          image: apache/airflow:2.9.1
+          image: docker.io/apache/airflow:2.9.1
           command: ["airflow", "webserver"]
           ports:
             - containerPort: 8080
