@@ -19,8 +19,7 @@ data:
   AIRFLOW__WEBSERVER__SECRET_KEY: "airflow-secret-key"
   
   # Airflow DB
-  AIRFLOW_DB_USER: "airflow"
-  AIRFLOW_DB_NAME: "airflow"
+  # AIRFLOW_DB_USER and AIRFLOW_DB_NAME removed; use POSTGRES_USER and POSTGRES_DB everywhere
   AIRFLOW_DB_HOST: "airflow-db"
   AIRFLOW_DB_PORT: "5432"
   

@@ -53,17 +53,17 @@ spec:
               echo "Airflow inicializado!"
           env:
             - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
-              value: "postgresql://$(AIRFLOW_DB_USER):$(POSTGRES_PASSWORD)@airflow-db:5432/$(AIRFLOW_DB_NAME)"
-            - name: AIRFLOW_DB_USER
+              value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@airflow-db:5432/$(POSTGRES_DB)"
+            - name: POSTGRES_USER
               valueFrom:
                 configMapKeyRef:
                   name: alert-manager-config
-                  key: AIRFLOW_DB_USER
-            - name: AIRFLOW_DB_NAME
+                  key: POSTGRES_USER
+            - name: POSTGRES_DB
               valueFrom:
                 configMapKeyRef:
                   name: alert-manager-config
-                  key: AIRFLOW_DB_NAME
+                  key: POSTGRES_DB
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -81,17 +81,17 @@ spec:
               name: http
           env:
             - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
-              value: "postgresql://$(AIRFLOW_DB_USER):$(POSTGRES_PASSWORD)@airflow-db:5432/$(AIRFLOW_DB_NAME)"
-            - name: AIRFLOW_DB_USER
+              value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@airflow-db:5432/$(POSTGRES_DB)"
+            - name: POSTGRES_USER
               valueFrom:
                 configMapKeyRef:
                   name: alert-manager-config
-                  key: AIRFLOW_DB_USER
-            - name: AIRFLOW_DB_NAME
+                  key: POSTGRES_USER
+            - name: POSTGRES_DB
               valueFrom:
                 configMapKeyRef:
                   name: alert-manager-config
-                  key: AIRFLOW_DB_NAME
+                  key: POSTGRES_DB
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
