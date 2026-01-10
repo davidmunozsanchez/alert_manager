@@ -189,56 +189,74 @@ jobs:
             echo "✅ DAG 'aemet_alerts_ingestion' encontrado en Airflow"
             echo "$DAG_RESPONSE" | jq '{dag_id, is_paused, schedule_interval, last_parsed_time}' 2>/dev/null || true
             
-            # Obtener últimas ejecuciones
-            echo ""
-            echo "🔄 Últimas ejecuciones del DAG:"
-            RUNS=$(curl -s "http://localhost:8080/api/v1/dags/aemet_alerts_ingestion/dagRuns?limit=5&state=success&state=failed&state=running" 2>/dev/null || echo "{}")
-            RUNS_COUNT=$(echo "$RUNS" | jq '.dag_runs | length' 2>/dev/null || echo "0")
-            
-            if [ "$RUNS_COUNT" -gt 0 ]; then
-              echo "✅ Encontradas $RUNS_COUNT ejecuciones del DAG"
-              echo "$RUNS" | jq '.dag_runs[] | {execution_date, state, start_date, end_date}' 2>/dev/null || true
-            else
-              echo "⏳ No hay ejecuciones del DAG aún. Esperando más tiempo (60s)..."
-              sleep 60
-              
-              RUNS=$(curl -s "http://localhost:8080/api/v1/dags/aemet_alerts_ingestion/dagRuns?limit=5&state=success&state=failed&state=running" 2>/dev/null || echo "{}")
-              RUNS_COUNT=$(echo "$RUNS" | jq '.dag_runs | length' 2>/dev/null || echo "0")
-              echo "   Después de esperar 60s: $RUNS_COUNT ejecuciones encontradas"
-              
-              if [ "$RUNS_COUNT" -gt 0 ]; then
-                echo "$RUNS" | jq '.dag_runs[] | {execution_date, state, start_date, end_date}' 2>/dev/null || true
-              else
-                echo "⚠️  Aún sin ejecuciones. Mostrando logs del scheduler:"
-                docker logs docker-airflow-scheduler-1 2>/dev/null | tail -50 || true
-                
-                echo ""
-                echo "📋 Verificando archivo DAG en el contenedor:"
-                docker exec docker-airflow-scheduler-1 ls -la /opt/airflow/dags/ 2>/dev/null || echo "⚠️ No se pudo listar /opt/airflow/dags"
-                
-                echo ""
-                echo "📋 Contenido del archivo DAG:"
-                docker exec docker-airflow-scheduler-1 head -50 /opt/airflow/dags/aemet_alerts_ingestion.py 2>/dev/null || echo "⚠️ No se pudo leer el DAG"
-                
-                echo ""
-                echo "📋 Intentando verificar sintaxis del DAG:"
-                docker exec docker-airflow-scheduler-1 python -m py_compile /opt/airflow/dags/aemet_alerts_ingestion.py 2>&1 || echo "⚠️ Error de sintaxis en el DAG"
-                
-                echo ""
-                echo "📋 Logs de DagFileProcessorManager:"
-                docker exec docker-airflow-scheduler-1 tail -100 /opt/airflow/logs/dag_processor_manager/dag_processor_manager.log 2>/dev/null || echo "⚠️ No se pudo acceder al log"
-              fi
+            # === PASO CLAVE: Despausar el DAG si está pausado ===
+            IS_PAUSED=$(echo "$DAG_RESPONSE" | jq -r '.is_paused' 2>/dev/null || echo "true")
+            if [ "$IS_PAUSED" = "true" ]; then
+              echo ""
+              echo "🔓 Despausando DAG 'aemet_alerts_ingestion'..."
+              UNPAUSE_RESPONSE=$(curl -s -X PATCH "http://localhost:8080/api/v1/dags/aemet_alerts_ingestion" \
+                -H "Content-Type: application/json" \
+                -d '{"is_paused": false}' 2>/dev/null || echo "{}")
+              echo "$UNPAUSE_RESPONSE" | jq '{dag_id, is_paused}' 2>/dev/null || true
             fi
             
-            # Verificar logs del DAG en Airflow si existen ejecuciones
-            if [ "$RUNS_COUNT" -gt 0 ]; then
-              echo ""
-              echo "📋 Logs del último run del DAG:"
-              LAST_RUN_ID=$(echo "$RUNS" | jq -r '.dag_runs[0].dag_run_id' 2>/dev/null)
-              if [ ! -z "$LAST_RUN_ID" ] && [ "$LAST_RUN_ID" != "null" ]; then
-                LOGS=$(curl -s "http://localhost:8080/api/v1/dags/aemet_alerts_ingestion/dagRuns/$LAST_RUN_ID/taskInstances" 2>/dev/null || echo "{}")
-                echo "$LOGS" | jq '.task_instances[] | {task_id, state, duration, try_number}' 2>/dev/null || true
+            # === PASO CLAVE: Disparar el DAG manualmente (determinista para CI) ===
+            echo ""
+            echo "🚀 Disparando ejecución manual del DAG..."
+            TRIGGER_RESPONSE=$(curl -s -X POST "http://localhost:8080/api/v1/dags/aemet_alerts_ingestion/dagRuns" \
+              -H "Content-Type: application/json" \
+              -d '{"dag_run_id": "ci_test_run_'"$(date +%s)"'", "logical_date": "'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'", "conf": {}}' 2>/dev/null || echo "{}")
+            
+            if echo "$TRIGGER_RESPONSE" | jq -e '.dag_run_id' >/dev/null 2>&1; then
+              TRIGGERED_RUN_ID=$(echo "$TRIGGER_RESPONSE" | jq -r '.dag_run_id')
+              echo "✅ DAG disparado con run_id: $TRIGGERED_RUN_ID"
+              echo "$TRIGGER_RESPONSE" | jq '{dag_run_id, state, logical_date}' 2>/dev/null || true
+            else
+              echo "⚠️  Error al disparar DAG:"
+              echo "$TRIGGER_RESPONSE" | jq . 2>/dev/null || echo "$TRIGGER_RESPONSE"
+            fi
+            
+            # Esperar a que el DAG termine
+            echo ""
+            echo "⏳ Esperando a que el DAG termine (máx 180s)..."
+            ELAPSED=0
+            MAX_WAIT_DAG=180
+            while [ $ELAPSED -lt $MAX_WAIT_DAG ]; do
+              RUNS=$(curl -s "http://localhost:8080/api/v1/dags/aemet_alerts_ingestion/dagRuns?limit=5" 2>/dev/null || echo "{}")
+              LATEST_STATE=$(echo "$RUNS" | jq -r '.dag_runs[0].state' 2>/dev/null || echo "unknown")
+              
+              if [ "$LATEST_STATE" = "success" ]; then
+                echo "✅ DAG ejecutado con éxito después de ${ELAPSED}s"
+                echo "$RUNS" | jq '.dag_runs[0] | {dag_run_id, state, start_date, end_date}' 2>/dev/null || true
+                break
+              elif [ "$LATEST_STATE" = "failed" ]; then
+                echo "❌ DAG falló después de ${ELAPSED}s"
+                echo "$RUNS" | jq '.dag_runs[0] | {dag_run_id, state, start_date, end_date}' 2>/dev/null || true
+                
+                # Mostrar logs de las tareas
+                LAST_RUN_ID=$(echo "$RUNS" | jq -r '.dag_runs[0].dag_run_id' 2>/dev/null)
+                if [ ! -z "$LAST_RUN_ID" ] && [ "$LAST_RUN_ID" != "null" ]; then
+                  echo ""
+                  echo "📋 Estado de tareas:"
+                  TASKS=$(curl -s "http://localhost:8080/api/v1/dags/aemet_alerts_ingestion/dagRuns/$LAST_RUN_ID/taskInstances" 2>/dev/null || echo "{}")
+                  echo "$TASKS" | jq '.task_instances[] | {task_id, state, try_number}' 2>/dev/null || true
+                fi
+                break
               fi
+              
+              if [ $((ELAPSED % 30)) -eq 0 ]; then
+                echo "   [${ELAPSED}s] Estado actual: $LATEST_STATE"
+              fi
+              
+              sleep 10
+              ELAPSED=$((ELAPSED + 10))
+            done
+            
+            if [ $ELAPSED -ge $MAX_WAIT_DAG ] && [ "$LATEST_STATE" != "success" ] && [ "$LATEST_STATE" != "failed" ]; then
+              echo "⚠️  Timeout esperando DAG (estado: $LATEST_STATE)"
+              echo ""
+              echo "📋 Logs del scheduler:"
+              docker logs docker-airflow-scheduler-1 2>/dev/null | tail -50 || true
             fi
           else
             echo "⚠️  No se pudo acceder a API de Airflow. DAG_RESPONSE: $DAG_RESPONSE"
@@ -267,17 +285,18 @@ jobs:
           echo "✅ Alertas iniciales: $INITIAL_COUNT"
           
           echo ""
-          echo "⏳ Esperando a que el DAG se ejecute (máximo 420 segundos = 7 minutos)..."
+          echo "⏳ Esperando a que las alertas se inserten (máximo 120 segundos)..."
           
           ELAPSED=0
-          MAX_WAIT=420
-          INTERVAL=15
+          MAX_WAIT=120
+          INTERVAL=10
           
           while [ $ELAPSED -lt $MAX_WAIT ]; do
             CURRENT_COUNT=$(docker exec docker-db-1 psql -U postgres -d alert_manager -t -c "SELECT COUNT(*) FROM alerts;" 2>/dev/null || echo "0")
+            CURRENT_COUNT=$(echo "$CURRENT_COUNT" | xargs)
             
-            if [ "$CURRENT_COUNT" -gt 0 ]; then
-              echo "✅ ¡DAG ejecutado! Se encontraron $CURRENT_COUNT alertas después de ${ELAPSED}s"
+            if [ "$CURRENT_COUNT" -gt 0 ] 2>/dev/null; then
+              echo "✅ ¡Alertas insertadas! Se encontraron $CURRENT_COUNT alertas después de ${ELAPSED}s"
               
               echo ""
               echo "📊 Detalles de alertas:"
@@ -296,11 +315,7 @@ jobs:
             
             # Mostrar estado cada 30 segundos
             if [ $((ELAPSED % 30)) -eq 0 ]; then
-              echo "   [$((ELAPSED/$INTERVAL))] Tiempo: ${ELAPSED}s | Alertas: $CURRENT_COUNT"
-              
-              # Mostrar estado del scheduler
-              SCHEDULER_STATUS=$(docker ps --filter "name=airflow-scheduler" --format "{{.Status}}" 2>/dev/null || echo "N/A")
-              echo "   📦 Scheduler: $SCHEDULER_STATUS"
+              echo "   [${ELAPSED}s] Alertas: $CURRENT_COUNT"
             fi
             
             sleep $INTERVAL
@@ -308,14 +323,18 @@ jobs:
           done
           
           echo ""
-          echo "⚠️ DAG no se ejecutó en el tiempo esperado (${MAX_WAIT}s)"
+          echo "⚠️ No se insertaron alertas en el tiempo esperado (${MAX_WAIT}s)"
           echo ""
           echo "📋 Estados de contenedores:"
           docker ps --filter "name=alert_manager" --format "table {{.Names}}\t{{.Status}}" 2>/dev/null || true
           
           echo ""
+          echo "📋 Logs del scheduler (últimas 50 líneas):"
+          docker logs docker-airflow-scheduler-1 2>/dev/null | tail -50 || true
+          
+          echo ""
           echo "💡 Si las alertas no se insertaron:"
-          echo "   1. Revisa logs del scheduler: docker logs alert_manager-airflow-scheduler-1"
+          echo "   1. Revisa logs del scheduler: docker logs docker-airflow-scheduler-1"
           echo "   2. Accede a Airflow UI: http://localhost:8080"
           echo "   3. Verifica si AEMET_API_KEY está configurada correctamente"
 
