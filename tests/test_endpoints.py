@@ -23,7 +23,8 @@ def client():
             self._json_data = json_data
             self.status_code = status_code
             self.headers = headers or {}
-            self.text = str(json_data)
+            # Para 204 No Content o None, text debe ser vacío
+            self.text = "" if json_data is None else str(json_data)
     
         def json(self):
             return self._json_data
