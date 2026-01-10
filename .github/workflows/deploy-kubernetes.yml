@@ -171,7 +171,7 @@ jobs:
       - name: Update image tag in Kustomize
         run: |
           cd k8s
-          kustomize edit set image ghcr.io/davidmunozsanchez/alert_manager=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.build-and-push.outputs.image-digest }}
+          kustomize edit set image ghcr.io/davidmunozsanchez/alert_manager=ghcr.io/davidmunozsanchez/alert_manager:latest
 
       - name: Deploy with Kustomize
         run: |
