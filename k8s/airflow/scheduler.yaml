@@ -37,7 +37,7 @@ spec:
           command: ["airflow", "scheduler"]
           env:
             - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
-              value: "postgresql://$(AIRFLOW_DB_USER):$(AIRFLOW_DB_PASSWORD)@airflow-db:5432/$(AIRFLOW_DB_NAME)"
+              value: "postgresql://airflow:airflow@airflow-db:5432/airflow"
             - name: AIRFLOW_DB_USER
               valueFrom:
                 configMapKeyRef:
