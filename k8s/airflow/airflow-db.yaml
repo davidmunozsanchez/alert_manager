@@ -46,12 +46,12 @@ spec:
               valueFrom:
                 configMapKeyRef:
                   name: alert-manager-config
-                  key: POSTGRES_USER
+                  key: AIRFLOW_DB_USER
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: alert-manager-secrets
-                  key: POSTGRES_PASSWORD
+                  key: AIRFLOW_DB_PASSWORD
             - name: POSTGRES_DB
               valueFrom:
                 configMapKeyRef:

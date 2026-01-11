@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: filebrowser
+  namespace: alert-manager
+  labels:
+    app: filebrowser
+    component: observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: filebrowser
+  template:
+    metadata:
+      labels:
+        app: filebrowser
+        component: observability
+    spec:
+      containers:
+        - name: filebrowser
+          image: filebrowser/filebrowser:latest
+          ports:
+            - containerPort: 80
+          env:
+            - name: FB_BASEURL
+              value: "/logs"
+          volumeMounts:
+            - name: logs
+              mountPath: /srv/logs
+              readOnly: true
+            - name: airflow-logs
+              mountPath: /srv/airflow-logs
+              readOnly: true
+      volumes:
+        - name: logs
+          hostPath:
+            path: /logs
+            type: DirectoryOrCreate
+        - name: airflow-logs
+          hostPath:
+            path: /docker/logs
+            type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: filebrowser
+  namespace: alert-manager
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 80
+      protocol: TCP
+      name: http
+  selector:
+    app: filebrowser

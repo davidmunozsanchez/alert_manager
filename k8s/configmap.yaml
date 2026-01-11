@@ -20,6 +20,7 @@ data:
   
   # Airflow DB
   AIRFLOW_DB_NAME: "airflow"
+  AIRFLOW_DB_USER: "airflow"
   AIRFLOW_DB_HOST: "airflow-db"
   AIRFLOW_DB_PORT: "5432"
   
