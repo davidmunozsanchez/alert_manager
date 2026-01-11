@@ -82,15 +82,15 @@ spec:
                 --email admin@example.com || echo "Usuario ya existe"
               echo "Airflow inicializado!"
         # Inicializar Airflow DB y crear usuario admin, no se crea 
-        - name: init-airflow
-          image: docker.io/apache/airflow:2.9.1
-          command:
-            - bash
-            - -c
-            - |
-              echo "Inicializando Airflow DB..."
-              airflow db migrate
-              echo "Airflow inicializado!"
+        # - name: init-airflow
+        #   image: docker.io/apache/airflow:2.9.1
+        #   command:
+        #     - bash
+        #     - -c
+        #     - |
+        #       echo "Inicializando Airflow DB..."
+        #       airflow db migrate
+        #       echo "Airflow inicializado!"
           env:
             - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
               value: "postgresql://airflow:airflow@airflow-db:5432/airflow"
