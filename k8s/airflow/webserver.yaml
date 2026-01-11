@@ -41,12 +41,22 @@ spec:
               airflow db migrate
               echo "Creando usuario admin..."
               airflow users create \
-                --username "$AIRFLOW_ADMIN_USER" \
-                --password "$AIRFLOW_ADMIN_PASSWORD" \
+                --username admin \
+                --password admin \
                 --firstname Admin \
                 --lastname User \
                 --role Admin \
-                --email "$AIRFLOW_ADMIN_EMAIL" || echo "Usuario ya existe"
+                --email admin@example.com || echo "Usuario ya existe"
+              echo "Airflow inicializado!"
+        # Inicializar Airflow DB y crear usuario admin, no se crea 
+        - name: init-airflow
+          image: docker.io/apache/airflow:2.9.1
+          command:
+            - bash
+            - -c
+            - |
+              echo "Inicializando Airflow DB..."
+              airflow db migrate
               echo "Airflow inicializado!"
           env:
             - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
@@ -66,21 +76,6 @@ spec:
                 secretKeyRef:
                   name: alert-manager-secrets
                   key: AIRFLOW_DB_PASSWORD
-            - name: AIRFLOW_ADMIN_USER
-              valueFrom:
-                secretKeyRef:
-                  name: alert-manager-secrets
-                  key: AIRFLOW_ADMIN_USER
-            - name: AIRFLOW_ADMIN_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: alert-manager-secrets
-                  key: AIRFLOW_ADMIN_PASSWORD
-            - name: AIRFLOW_ADMIN_EMAIL
-              valueFrom:
-                secretKeyRef:
-                  name: alert-manager-secrets
-                  key: AIRFLOW_ADMIN_EMAIL
           envFrom:
             - configMapRef:
                 name: alert-manager-config
