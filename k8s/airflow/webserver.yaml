@@ -109,7 +109,9 @@ spec:
                 name: alert-manager-config
           volumeMounts:
             - name: dags
-              mountPath: /opt/airflow/dags
+              mountPath: /opt/airflow/dags/aemet_alerts_ingestion.py
+              subPath: aemet_alerts_ingestion.py
+              readOnly: true
           resources:
             requests:
               memory: "512Mi"
