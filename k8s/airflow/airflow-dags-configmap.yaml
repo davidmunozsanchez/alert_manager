@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: airflow-dags
+  namespace: alert-manager
+data:
+  aemet_alerts_ingestion.py: |
+    # (El contenido real se copiará desde src/dags/aemet_alerts_ingestion.py)
+  dgt_traffic_ingestion.py: |
+    # (El contenido real se copiará desde src/dags/dgt_traffic_ingestion.py)

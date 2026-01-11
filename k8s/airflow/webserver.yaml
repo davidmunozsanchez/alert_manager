@@ -69,37 +69,20 @@ spec:
           envFrom:
             - configMapRef:
                 name: alert-manager-config
-        # Inicializar Airflow DB y crear usuario admin, no se crea 
-        # - name: init-airflow
-        #   image: docker.io/apache/airflow:2.9.1
-        #   command:
-        #     - bash
-        #     - -c
-        #     - |
-        #       echo "Inicializando Airflow DB..."
-        #       airflow db migrate
-        #       echo "Airflow inicializado!"
-        #   env:
-        #     - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
-        #       value: "postgresql://airflow:airflow@airflow-db:5432/airflow"
-        #     - name: AIRFLOW_DB_USER
-        #       valueFrom:
-        #         configMapKeyRef:
-        #           name: alert-manager-config
-        #           key: AIRFLOW_DB_USER
-        #     - name: AIRFLOW_DB_NAME
-        #       valueFrom:
-        #         configMapKeyRef:
-        #           name: alert-manager-config
-        #           key: AIRFLOW_DB_NAME
-        #     - name: AIRFLOW_DB_PASSWORD
-        #       valueFrom:
-        #         secretKeyRef:
-        #           name: alert-manager-secrets
-        #           key: AIRFLOW_DB_PASSWORD
-        #   envFrom:
-        #     - configMapRef:
-        #         name: alert-manager-config
+        - name: copy-dags
+          image: docker.io/library/busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              echo "Copiando DAGs...";
+              cp -r /dags-configmap/* /opt/airflow/dags/;
+              ls -l /opt/airflow/dags/
+          volumeMounts:
+            - name: dags-configmap
+              mountPath: /dags-configmap
+            - name: dags
+              mountPath: /opt/airflow/dags
       containers:
         - name: webserver
           image: docker.io/apache/airflow:2.9.1
@@ -141,7 +124,6 @@ spec:
           volumeMounts:
             - name: dags
               mountPath: /opt/airflow/dags
-              readOnly: true
           resources:
             requests:
               memory: "512Mi"
@@ -167,5 +149,7 @@ spec:
             failureThreshold: 3
       volumes:
         - name: dags
+          emptyDir: {}
+        - name: dags-configmap
           configMap:
             name: airflow-dags

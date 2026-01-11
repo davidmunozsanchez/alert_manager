@@ -31,6 +31,20 @@ spec:
                 sleep 5
               done
               echo "Webserver disponible!"
+        - name: copy-dags
+          image: docker.io/library/busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              echo "Copiando DAGs...";
+              cp -r /dags-configmap/* /opt/airflow/dags/;
+              ls -l /opt/airflow/dags/
+          volumeMounts:
+            - name: dags-configmap
+              mountPath: /dags-configmap
+            - name: dags
+              mountPath: /opt/airflow/dags
       containers:
         - name: scheduler
           image: docker.io/apache/airflow:2.9.1
@@ -48,7 +62,7 @@ spec:
                 configMapKeyRef:
                   name: alert-manager-config
                   key: AIRFLOW_DB_NAME
-            - name:   AIRFLOW_DB_PASSWORD
+            - name: AIRFLOW_DB_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: alert-manager-secrets
@@ -95,7 +109,6 @@ spec:
           volumeMounts:
             - name: dags
               mountPath: /opt/airflow/dags
-              readOnly: true
           resources:
             requests:
               memory: "512Mi"
@@ -105,5 +118,7 @@ spec:
               cpu: "500m"
       volumes:
         - name: dags
+          emptyDir: {}
+        - name: dags-configmap
           configMap:
             name: airflow-dags
