@@ -50,7 +50,8 @@ resources:
   
   # Airflow
   - airflow/airflow-db.yaml
-  - airflow/airflow-dags-configmap.yaml
+  - airflow/webserver.yaml
+  - airflow/scheduler.yaml
   - airflow/service.yaml
   
   # Observabilidad
