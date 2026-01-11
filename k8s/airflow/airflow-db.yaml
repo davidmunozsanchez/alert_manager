@@ -42,17 +42,17 @@ spec:
             - containerPort: 5432
               name: postgres
           env:
-            - name: AIRFLOW_DB_USER
+            - name: POSTGRES_USER
               valueFrom:
                 configMapKeyRef:
                   name: alert-manager-config
                   key: AIRFLOW_DB_USER
-            - name: AIRFLOW_DB_PASSWORD
+            - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: alert-manager-secrets
                   key: AIRFLOW_DB_PASSWORD
-            - name: AIRFLOW_DB_NAME
+            - name: POSTGRES_DB
               valueFrom:
                 configMapKeyRef:
                   name: alert-manager-config

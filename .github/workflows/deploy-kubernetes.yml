@@ -138,6 +138,19 @@ jobs:
         run: |
           kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
 
+      - name: Validate Secrets
+        id: validate-secrets
+        run: |
+          if [ -z "${{ secrets.POSTGRES_PASSWORD }}" ]; then
+            echo "::error file=.github/workflows/deploy-kubernetes.yml,line=107::POSTGRES_PASSWORD secret is not set."
+            exit 1
+          fi
+          if [ -z "${{ secrets.AIRFLOW_DB_PASSWORD }}" ]; then
+            echo "::error file=.github/workflows/deploy-kubernetes.yml,line=111::AIRFLOW_DB_PASSWORD secret is not set."
+            exit 1
+          fi
+          echo "Secrets are valid."
+
       - name: Create/Update Secrets
         run: |
           kubectl create secret generic alert-manager-secrets \
