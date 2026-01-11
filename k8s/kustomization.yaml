@@ -58,3 +58,14 @@ resources:
   # - observability/dozzle.yaml
   # - observability/filebrowser.yaml
   # - observability/log-tester.yaml
+
+# Labels comunes para todos los recursos
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: alert-manager
+      app.kubernetes.io/managed-by: kustomize
+
+# Configuración de imágenes
+images:
+  - name: ghcr.io/davidmunozsanchez/alert_manager
+    newTag: latest
