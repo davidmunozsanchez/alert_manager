@@ -48,6 +48,27 @@ spec:
                 --role Admin \
                 --email admin@example.com || echo "Usuario ya existe"
               echo "Airflow inicializado!"
+          env:
+            - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
+              value: "postgresql://airflow:airflow@airflow-db:5432/airflow"
+            - name: AIRFLOW_DB_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: alert-manager-config
+                  key: AIRFLOW_DB_USER
+            - name: AIRFLOW_DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: alert-manager-config
+                  key: AIRFLOW_DB_NAME
+            - name: AIRFLOW_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: alert-manager-secrets
+                  key: AIRFLOW_DB_PASSWORD
+          envFrom:
+            - configMapRef:
+                name: alert-manager-config
         # Inicializar Airflow DB y crear usuario admin, no se crea 
         # - name: init-airflow
         #   image: docker.io/apache/airflow:2.9.1
