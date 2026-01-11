@@ -31,7 +31,16 @@ spec:
                 sleep 2
               done
               echo "DB disponible!"
-        # Inicializar Airflow DB y crear usuario admin
+        # Inicializar Airflow DB y crear usuario admin, no se crea 
+        - name: init-airflow
+          image: docker.io/apache/airflow:2.9.1
+          command:
+            - bash
+            - -c
+            - |
+              echo "Inicializando Airflow DB..."
+              airflow db migrate
+              echo "Airflow inicializado!"
           env:
             - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
               value: "postgresql://$(AIRFLOW_DB_USER):$(AIRFLOW_DB_PASSWORD)@airflow-db:5432/$(AIRFLOW_DB_NAME)"
