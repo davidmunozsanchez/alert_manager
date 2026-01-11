@@ -201,6 +201,11 @@ jobs:
           kubectl rollout status deployment/airflow-scheduler -n ${{ env.NAMESPACE }} --timeout=300s || true
           kubectl rollout status deployment/seq -n ${{ env.NAMESPACE }} --timeout=300s || true
 
+      - name: Print Airflow Webserver logs
+        run: |
+          echo "=== Airflow Webserver Logs ==="
+          kubectl logs -n ${{ env.NAMESPACE }} -l app=airflow-webserver --tail=100 || true
+
       - name: Get deployment status
         run: |
           echo "=== Pods Status ==="
