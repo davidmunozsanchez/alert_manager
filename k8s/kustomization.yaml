@@ -22,6 +22,7 @@ resources:
   
   # Airflow
   - airflow/airflow-db.yaml
+  - airflow/airflow-logs-pvc.yaml
   - airflow/webserver.yaml
   - airflow/scheduler.yaml
   - airflow/service.yaml
