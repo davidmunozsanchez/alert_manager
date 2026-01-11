@@ -37,22 +37,22 @@ spec:
           command: ["airflow", "scheduler"]
           env:
             - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
-              value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@airflow-db:5432/$(AIRFLOW_DB_NAME)"
-            - name: POSTGRES_USER
+              value: "postgresql://$(AIRFLOW_DB_USER):$(AIRFLOW_DB_PASSWORD)@airflow-db:5432/$(AIRFLOW_DB_NAME)"
+            - name: AIRFLOW_DB_USER
               valueFrom:
                 configMapKeyRef:
                   name: alert-manager-config
-                  key: POSTGRES_USER
+                  key: AIRFLOW_DB_USER
             - name: AIRFLOW_DB_NAME
               valueFrom:
                 configMapKeyRef:
                   name: alert-manager-config
                   key: AIRFLOW_DB_NAME
-            - name: POSTGRES_PASSWORD
+            - name:   AIRFLOW_DB_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: alert-manager-secrets
-                  key: POSTGRES_PASSWORD
+                  key: AIRFLOW_DB_PASSWORD
             - name: AEMET_API_KEY
               valueFrom:
                 secretKeyRef:
