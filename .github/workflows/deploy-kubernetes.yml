@@ -271,3 +271,4 @@ jobs:
           echo "- **Region**: ${{ env.OCI_REGION }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Namespace**: ${{ env.NAMESPACE }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Status**: ${{ needs.deploy.result }}" >> $GITHUB_STEP_SUMMARY
+          
