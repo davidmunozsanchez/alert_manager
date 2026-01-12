@@ -26,7 +26,7 @@ spec:
             - -c
             - |
               echo "Esperando a Airflow Webserver..."
-              until nc -z ${AIRFLOW_WEBSERVER_HOST} ${AIRFLOW_WEBSERVER_PORT}; do
+              until nc -z airflow-webserver 8080; do
                 echo "Webserver no disponible, reintentando en 5s..."
                 sleep 5
               done

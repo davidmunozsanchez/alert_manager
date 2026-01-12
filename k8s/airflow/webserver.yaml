@@ -26,7 +26,7 @@ spec:
             - -c
             - |
               echo "Esperando a Airflow DB..."
-              until nc -z ${AIRFLOW_DB_HOST} ${AIRFLOW_DB_PORT}; do
+              until nc -z airflow-db 5432; do
                 echo "DB no disponible, reintentando en 2s..."
                 sleep 2
               done
