@@ -439,7 +439,7 @@ def validate_and_insert_aemet_alerts() -> None:
 # Definir el DAG
 with DAG(
     dag_id="aemet_alerts_ingestion",
-    start_date=datetime.today(),
+    start_date=datetime(2025, 1, 1),
     schedule_interval="*/15 * * * *",  # Cada 15 minutos
     catchup=False,
     description="Obtiene alertas CAP de AEMET OpenData y las inserta en PostgreSQL",
