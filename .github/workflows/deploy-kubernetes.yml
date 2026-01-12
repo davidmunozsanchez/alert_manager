@@ -241,7 +241,7 @@ jobs:
 
             # Esperar a que el endpoint /alerts/ responda con 200
             for i in {1..30}; do
-              STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://$API_IP:8000/alerts/")
+              STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://$API_IP/alerts/")
               if [ "$STATUS" -eq 200 ]; then
                 echo "✅ API /alerts/ health check passed!"
                 exit 0
