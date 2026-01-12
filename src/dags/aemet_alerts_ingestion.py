@@ -56,7 +56,7 @@ def fetch_aemet_alerts_from_opendata() -> str:
             with open(output_path, "w", encoding="utf-8") as f:
                 json.dump(demo_data, f, indent=2, ensure_ascii=False)
             # XCom push para debug
-            context['ti'].xcom_push(key='aemet_alerts_path', value=output_path)
+            context['ti'].xcom_push(key='aemet_alerts_path_no_api_key', value=output_path)
             return output_path
         # Paso 1: Obtener URL con autenticación
         url = "https://opendata.aemet.es/opendata/api/avisos_cap/ultimoelaborado/area/esp"
@@ -237,14 +237,24 @@ def validate_and_insert_aemet_alerts() -> None:
         # XCom pull para debug
         xcom_path = context['ti'].xcom_pull(task_ids='fetch_aemet_alerts', key='aemet_alerts_path')
         print(f"[XCOM DEBUG] fetch_aemet_alerts output path: {xcom_path}")
+        # XCom push: path recibido
+        context['ti'].xcom_push(key='validate_start_xcom_path', value=xcom_path)
         json_path = xcom_path or "/opt/airflow/dags/aemet_alerts.json"
+        # XCom push: path final usado
+        context['ti'].xcom_push(key='validate_json_path', value=json_path)
         if not os.path.exists(json_path):
             print(f"⚠️  Archivo de alertas no encontrado en {json_path}. Abortando.")
+            context['ti'].xcom_push(key='validate_file_exists', value=False)
             return
+        context['ti'].xcom_push(key='validate_file_exists', value=True)
         with open(json_path, "r", encoding="utf-8") as f:
             data = json.load(f)
+        # XCom push: tipo de data
+        context['ti'].xcom_push(key='validate_data_type', value=str(type(data)))
         if not isinstance(data, list):
             data = [data]
+        # XCom push: número de alertas
+        context['ti'].xcom_push(key='validate_num_alerts', value=len(data))
         print(f"Procesando {len(data)} alertas...")
         valid_alerts = []
         invalid_alerts = []
@@ -278,10 +288,15 @@ def validate_and_insert_aemet_alerts() -> None:
                 invalid_alerts.append({"index": idx, "alert": alert, "errors": errors})
             else:
                 valid_alerts.append(alert)
+        # XCom push: resumen validación
+        context['ti'].xcom_push(key='validate_valid_alerts', value=len(valid_alerts))
+        context['ti'].xcom_push(key='validate_invalid_alerts', value=len(invalid_alerts))
         print(f"✅ Validación: {len(valid_alerts)} válidas, {len(invalid_alerts)} inválidas")
         if not valid_alerts:
             print("⚠️  No hay alertas válidas para insertar.")
+            context['ti'].xcom_push(key='validate_no_valid_alerts', value=True)
             return
+        context['ti'].xcom_push(key='validate_no_valid_alerts', value=False)
         # Conectar a PostgreSQL con reintentos
         conn = None
         max_retries = 10
@@ -296,9 +311,11 @@ def validate_and_insert_aemet_alerts() -> None:
                     port=5432
                 )
                 print(f"✅ Conexión a PostgreSQL establecida en intento {attempt + 1}")
+                context['ti'].xcom_push(key='validate_pg_connect', value=True)
                 break
             except psycopg2.Error as e:
                 print(f"⏳ Error conectando a PostgreSQL (intento {attempt + 1}/{max_retries}): {e}")
+                context['ti'].xcom_push(key='validate_pg_connect', value=False)
                 if attempt < max_retries - 1:
                     print(f"   Esperando {retry_delay}s antes de reintentar...")
                     time.sleep(retry_delay)
@@ -315,6 +332,7 @@ def validate_and_insert_aemet_alerts() -> None:
             )
         """)
         table_exists = cur.fetchone()[0]
+        context['ti'].xcom_push(key='validate_table_exists', value=table_exists)
         if not table_exists:
             print("⚠️  Tabla 'alerts' no existe aún. Esperando a que se cree...")
             conn.close()
@@ -338,6 +356,7 @@ def validate_and_insert_aemet_alerts() -> None:
                         )
                     """)
                     table_exists = cur.fetchone()[0]
+                    context['ti'].xcom_push(key='validate_table_exists_retry', value=table_exists)
                     if table_exists:
                         print("✅ Tabla 'alerts' ahora existe")
                         break
@@ -356,8 +375,10 @@ def validate_and_insert_aemet_alerts() -> None:
             deleted_count = cur.rowcount
             conn.commit()
             print(f"✅ {deleted_count} alertas AEMET eliminadas")
+            context['ti'].xcom_push(key='validate_deleted_count', value=deleted_count)
         except Exception as e:
             print(f"⚠️  Error al borrar alertas: {e}")
+            context['ti'].xcom_push(key='validate_delete_error', value=str(e))
             conn.rollback()
         # PASO 2: Insertar nuevas alertas de AEMET
         print("📝 Insertando nuevas alertas AEMET...")
@@ -391,16 +412,20 @@ def validate_and_insert_aemet_alerts() -> None:
                 inserted_count += 1
             except Exception as e:
                 print(f"⚠️  Error insertando alerta: {e}")
+                context['ti'].xcom_push(key=f'validate_insert_error_{inserted_count}', value=str(e))
                 continue
         conn.commit()
         cur.close()
         conn.close()
         print(f"✅ {inserted_count} alertas insertadas en la base de datos.")
+        context['ti'].xcom_push(key='validate_inserted_count', value=inserted_count)
     except psycopg2.Error as e:
         print(f"❌ Error de conexión a PostgreSQL: {e}")
+        context['ti'].xcom_push(key='validate_pg_error', value=str(e))
         raise
     except Exception as e:
         print(f"❌ Error durante validación:")
+        context['ti'].xcom_push(key='validate_general_error', value=str(e))
         traceback.print_exc()
         raise
 
