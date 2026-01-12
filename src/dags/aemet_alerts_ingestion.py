@@ -26,9 +26,10 @@ def fetch_aemet_alerts_from_opendata() -> str:
     5. Convierte XMLs a JSON normalizado
     6. Guarda en archivo para siguiente tarea
     """
+    from airflow.operators.python import get_current_context
     try:
         print("🔐 Iniciando obtención de datos de AEMET con autenticación...")
-        
+        context = get_current_context()
         # Obtener API key desde Airflow Variable o env
         api_key = None
         try:
@@ -36,7 +37,6 @@ def fetch_aemet_alerts_from_opendata() -> str:
         except Exception as e:
             print(f"⚠️  No se pudo leer de Variable: {e}")
             api_key = os.getenv("AEMET_API_KEY")
-        
         if not api_key:
             print("⚠️  AEMET_API_KEY no configurada. Usando datos de demostración.")
             demo_data = [
@@ -55,52 +55,42 @@ def fetch_aemet_alerts_from_opendata() -> str:
             output_path = "/opt/airflow/dags/aemet_alerts.json"
             with open(output_path, "w", encoding="utf-8") as f:
                 json.dump(demo_data, f, indent=2, ensure_ascii=False)
+            # XCom push para debug
+            context['ti'].xcom_push(key='aemet_alerts_path', value=output_path)
             return output_path
-        
         # Paso 1: Obtener URL con autenticación
         url = "https://opendata.aemet.es/opendata/api/avisos_cap/ultimoelaborado/area/esp"
         print(f"Llamando a: {url}")
-        
         auth_response = requests.get(
             url,
             headers={"api_key": api_key},
             timeout=30
         )
-        
         if auth_response.status_code != 200:
             raise Exception(f"Error en autenticación: {auth_response.status_code}")
-        
         auth_data = auth_response.json()
         print(f"✅ Respuesta AEMET: {auth_data.get('descripcion')}")
-        
         # Paso 2: Descargar TAR
         data_url = auth_data.get("datos")
         if not data_url:
             print("⚠️  No hay datos disponibles en AEMET")
             return None
-        
         print(f"📥 Descargando archivo TAR desde AEMET ({len(data_url)} bytes de URL)...")
         tar_response = requests.get(data_url, timeout=60)
-        
         if tar_response.status_code != 200:
             raise Exception(f"Error descargando TAR: {tar_response.status_code}")
-        
         print(f"✅ TAR descargado: {len(tar_response.content)} bytes")
-        
         # Paso 3: Extraer y procesar XMLs
         print("📦 Extrayendo y procesando XMLs...")
         tar_bytes = io.BytesIO(tar_response.content)
         tar = tarfile.open(fileobj=tar_bytes, mode='r')
-        
         alerts_list = []
         xml_members = [m for m in tar.getmembers() if m.name.endswith('.xml')]
         print(f"Encontrados {len(xml_members)} archivos XML")
-        
         for xml_member in xml_members:
             try:
                 f = tar.extractfile(xml_member)
                 xml_content = f.read().decode('utf-8')
-                
                 # Parsear CAP XML
                 alert_data = parse_cap_xml(xml_content)
                 if alert_data:
@@ -108,21 +98,17 @@ def fetch_aemet_alerts_from_opendata() -> str:
             except Exception as e:
                 print(f"⚠️  Error procesando {xml_member.name}: {e}")
                 continue
-        
         tar.close()
-        
         print(f"✅ {len(alerts_list)} alertas extraídas y procesadas")
-        
         # Paso 4: Guardar JSON
         output_path = "/opt/airflow/dags/aemet_alerts.json"
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump(alerts_list, f, indent=2, ensure_ascii=False)
-        
         print(f"✅ Datos guardados en {output_path}")
+        # XCom push para debug
+        context['ti'].xcom_push(key='aemet_alerts_path', value=output_path)
         return output_path
-        
     except Exception as e:
         print(f"❌ Error en obtención de datos:")
         traceback.print_exc()
@@ -244,40 +230,35 @@ def validate_and_insert_aemet_alerts() -> None:
     Valida las alertas AEMET e inserta en PostgreSQL.
     """
     import time
-    
+    from airflow.operators.python import get_current_context
     try:
         print("Iniciando validación e inserción de alertas AEMET...")
-        
-        json_path = "/opt/airflow/dags/aemet_alerts.json"
+        context = get_current_context()
+        # XCom pull para debug
+        xcom_path = context['ti'].xcom_pull(task_ids='fetch_aemet_alerts', key='aemet_alerts_path')
+        print(f"[XCOM DEBUG] fetch_aemet_alerts output path: {xcom_path}")
+        json_path = xcom_path or "/opt/airflow/dags/aemet_alerts.json"
         if not os.path.exists(json_path):
-            print("⚠️  Archivo de alertas no encontrado. Abortando.")
+            print(f"⚠️  Archivo de alertas no encontrado en {json_path}. Abortando.")
             return
-        
         with open(json_path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        
         if not isinstance(data, list):
             data = [data]
-        
         print(f"Procesando {len(data)} alertas...")
-        
         valid_alerts = []
         invalid_alerts = []
-        
         # Validar alertas
         required_fields = [
             "title", "description", "level", "type",
             "region", "status", "expires_at", "latitude", "longitude"
         ]
-        
         for idx, alert in enumerate(data):
             errors = []
-            
             # Verificar campos requeridos
             for field in required_fields:
                 if field not in alert:
                     errors.append(f"Campo faltante: {field}")
-            
             # Validar coordenadas
             if "latitude" in alert:
                 try:
@@ -286,7 +267,6 @@ def validate_and_insert_aemet_alerts() -> None:
                         errors.append(f"Latitud fuera de rango: {lat}")
                 except (ValueError, TypeError):
                     errors.append(f"Latitud inválida: {alert.get('latitude')}")
-            
             if "longitude" in alert:
                 try:
                     lon = float(alert["longitude"])
@@ -294,23 +274,18 @@ def validate_and_insert_aemet_alerts() -> None:
                         errors.append(f"Longitud fuera de rango: {lon}")
                 except (ValueError, TypeError):
                     errors.append(f"Longitud inválida: {alert.get('longitude')}")
-            
             if errors:
                 invalid_alerts.append({"index": idx, "alert": alert, "errors": errors})
             else:
                 valid_alerts.append(alert)
-        
         print(f"✅ Validación: {len(valid_alerts)} válidas, {len(invalid_alerts)} inválidas")
-        
         if not valid_alerts:
             print("⚠️  No hay alertas válidas para insertar.")
             return
-        
         # Conectar a PostgreSQL con reintentos
         conn = None
         max_retries = 10
         retry_delay = 5
-        
         for attempt in range(max_retries):
             try:
                 conn = psycopg2.connect(
@@ -330,9 +305,7 @@ def validate_and_insert_aemet_alerts() -> None:
                 else:
                     print(f"❌ No se pudo conectar a PostgreSQL después de {max_retries} intentos")
                     raise
-        
         cur = conn.cursor()
-        
         # Verificar que la tabla existe
         print("🔍 Verificando que la tabla 'alerts' existe...")
         cur.execute("""
@@ -342,13 +315,11 @@ def validate_and_insert_aemet_alerts() -> None:
             )
         """)
         table_exists = cur.fetchone()[0]
-        
         if not table_exists:
             print("⚠️  Tabla 'alerts' no existe aún. Esperando a que se cree...")
             conn.close()
             print("   Esperando 30s para que FastAPI inicialice la BD...")
             time.sleep(30)
-            
             # Reconectar
             for attempt in range(3):
                 try:
@@ -373,13 +344,11 @@ def validate_and_insert_aemet_alerts() -> None:
                 except Exception as e:
                     print(f"⏳ Reintentando... ({attempt + 1}/3): {e}")
                     time.sleep(10)
-            
             if not table_exists:
                 print("❌ La tabla 'alerts' sigue sin existir. Abortando.")
                 if conn:
                     conn.close()
                 return
-        
         # PASO 1: Borrar solo las alertas de AEMET anteriores
         print("🗑️  Borrando alertas AEMET anteriores...")
         try:
@@ -390,7 +359,6 @@ def validate_and_insert_aemet_alerts() -> None:
         except Exception as e:
             print(f"⚠️  Error al borrar alertas: {e}")
             conn.rollback()
-        
         # PASO 2: Insertar nuevas alertas de AEMET
         print("📝 Insertando nuevas alertas AEMET...")
         inserted_count = 0
@@ -424,17 +392,13 @@ def validate_and_insert_aemet_alerts() -> None:
             except Exception as e:
                 print(f"⚠️  Error insertando alerta: {e}")
                 continue
-        
         conn.commit()
         cur.close()
         conn.close()
-        
         print(f"✅ {inserted_count} alertas insertadas en la base de datos.")
-        
     except psycopg2.Error as e:
         print(f"❌ Error de conexión a PostgreSQL: {e}")
         raise
-    
     except Exception as e:
         print(f"❌ Error durante validación:")
         traceback.print_exc()
