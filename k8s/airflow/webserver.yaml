@@ -26,7 +26,7 @@ spec:
             - -c
             - |
               echo "Esperando a Airflow DB..."
-              until nc -z airflow-db 5432; do
+              until nc -z ${AIRFLOW_DB_HOST} ${AIRFLOW_DB_PORT}; do
                 echo "DB no disponible, reintentando en 2s..."
                 sleep 2
               done
@@ -50,7 +50,7 @@ spec:
               echo "Airflow inicializado!"
           env:
             - name: AIRFLOW__DATABASE__SQL_ALCHEMY_CONN
-              value: "postgresql://airflow:airflow@airflow-db:5432/airflow"
+              value: "postgresql://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@${AIRFLOW_DB_HOST}:${AIRFLOW_DB_PORT}/${AIRFLOW_DB_NAME}"
             - name: AIRFLOW_DB_USER
               valueFrom:
                 configMapKeyRef:
