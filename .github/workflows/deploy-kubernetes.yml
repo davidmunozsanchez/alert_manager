@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - hito5
     paths-ignore:
       - '*.md'
       - 'doc/**'
