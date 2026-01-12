@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dozzle
+  namespace: alert-manager
+  labels:
+    app: dozzle
+    component: observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dozzle
+  template:
+    metadata:
+      labels:
+        app: dozzle
+        component: observability
+    spec:
+      containers:
+        - name: dozzle
+          image: amir20/dozzle:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: DOZZLE_LEVEL
+              value: "info"
+            - name: DOZZLE_TAILSIZE
+              value: "300"
+            - name: DOZZLE_FILTER
+              value: "status=running"
+          volumeMounts:
+            - name: docker-sock
+              mountPath: /var/run/docker.sock
+              readOnly: true
+      volumes:
+        - name: docker-sock
+          hostPath:
+            path: /var/run/docker.sock
+            type: Socket
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dozzle
+  namespace: alert-manager
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http
+  selector:
+    app: dozzle

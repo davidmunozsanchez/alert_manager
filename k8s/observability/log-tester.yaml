@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: log-tester
+  namespace: alert-manager
+  labels:
+    app: log-tester
+    component: observability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: log-tester
+  template:
+    metadata:
+      labels:
+        app: log-tester
+        component: observability
+    spec:
+      containers:
+        - name: log-tester
+          image: curlimages/curl:latest
+          command:
+            - sh
+            - -c
+            - |
+              echo 'Esperando a que Seq esté listo...'
+              sleep 60
+              echo 'Probando Seq en puerto interno 80...'
+              curl -f http://seq:80/ -w 'Seq Web HTTP Status: %{http_code}\n' || echo 'Seq web no responde'
+              echo 'Enviando logs de prueba a Seq API...'
+              while true; do
+                TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
+                curl -X POST http://seq:80/api/events/raw \
+                  -H 'Content-Type: application/vnd.serilog.clef' \
+                  -d '{"@t":"'$TIMESTAMP'","@l":"Information","@mt":"🔥 Test log from container - Seq is working!","Component":"log-tester","Status":"healthy","TestId":"'$(date +%s)'"}' \
+                  -w 'HTTP Status: %{http_code}\n' || echo 'Failed to send test log'
+                sleep 30
+done
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: log-tester
+  namespace: alert-manager
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 80
+      protocol: TCP
+      name: http
+  selector:
+    app: log-tester

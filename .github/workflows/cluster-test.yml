@@ -3,9 +3,9 @@ name: Cluster Test
 on:
   workflow_dispatch:
   push:
-    branches: ["main", "hito4"]
+    branches: ["main", "hito5"]
   pull_request:
-    branches: ["main", "hito4"]
+    branches: ["main", "hito5"]
 
 jobs:
   test-cluster:
@@ -44,26 +44,204 @@ jobs:
           docker images
 
       - name: Start cluster
+        env:
+          AEMET_API_KEY: ${{ secrets.AEMET_API_KEY }}
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          DB_NAME: alert_manager
         run: |
           # --no-build fuerza a usar la imagen descargada
-          docker compose -f docker/docker-compose.yml up -d --no-build
+          cd docker && docker compose -f docker-compose.yml up -d --no-build
 
-      - name: Run cluster health tests
+      - name: Wait for services to be ready
+        run: |
+          echo "⏳ Esperando a que los servicios estén listos..."
+          echo ""
+          echo "📦 Contenedores después de 30s:"
+          sleep 30
+          docker ps -a
+          
+          echo ""
+          echo "⏳ Esperando más tiempo (otros 90s para que Airflow inicialice)..."
+          sleep 90
+          
+          echo "✅ Servicios deberían estar iniciados"
+
+      - name: Check cluster health
         run: |
           echo "🔍 Comprobando contenedores activos..."
           docker ps
-          # (Aquí te recomiendo poner de nuevo el script paciente 'wait_for_url' que hicimos antes)
-          # Pero para probar la descarga, esto vale:
-          sleep 30 
+          
+          # Verificar API
+          echo "📡 Probando API en localhost:8000..."
           curl --fail http://localhost:8000/health || exit 1
-          echo "🎉 El clúster funciona correctamente"
+          echo "✅ API respondiendo correctamente"
+
+      - name: Verify AEMET DAG execution
+        env:
+          PGPASSWORD: postgres
+        run: |
+          echo "🔧 Instalando dependencias..."
+          sudo apt-get update && sudo apt-get install -y postgresql-client jq curl 2>&1 | tail -5
+          
+          echo ""
+          echo "📍 === ESTADO DE CONTENEDORES ==="
+          docker ps -a
+          
+          echo ""
+          echo "🔍 Contenedores en ejecución:"
+          docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+          
+          echo ""
+          echo "📍 === VERIFICANDO BASE DE DATOS ==="
+          ELAPSED=0
+          MAX_WAIT=120
+          while [ $ELAPSED -lt $MAX_WAIT ]; do
+            # Intentar conexión vía docker exec (sin especificar DB, solo conectar a postgres)
+            if docker exec docker-db-1 psql -U postgres -c "SELECT 1;" >/dev/null 2>&1; then
+              echo "✅ PostgreSQL disponible"
+              break
+            fi
+            echo "⏳ PostgreSQL no disponible (${ELAPSED}s), reintentando en 5s..."
+            sleep 5
+            ELAPSED=$((ELAPSED + 5))
+          done
+          
+          if [ $ELAPSED -ge $MAX_WAIT ]; then
+            echo "❌ PostgreSQL no está disponible después de 120s"
+            echo ""
+            echo "📋 LOGS DE POSTGRES:"
+            docker logs docker-db-1 2>/dev/null | tail -30 || true
+            exit 1
+          fi
+          
+          echo ""
+          echo "� === ESPERANDO A QUE LA TABLA 'alerts' SE CREE ==="
+          ELAPSED=0
+          MAX_WAIT_TABLES=180
+          TABLE_FOUND=false
+          
+          while [ $ELAPSED -lt $MAX_WAIT_TABLES ]; do
+            TABLE_EXISTS=$(docker exec docker-db-1 psql -U postgres -d alert_manager -t -c "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name='alerts');" 2>/dev/null || echo "false")
+            TABLE_EXISTS=$(echo "$TABLE_EXISTS" | xargs)
+            
+            if [ "$TABLE_EXISTS" = "t" ]; then
+              echo "✅ Tabla 'alerts' creada correctamente!"
+              TABLE_FOUND=true
+              break
+            fi
+            
+            if [ $((ELAPSED % 30)) -eq 0 ]; then
+              echo "⏳ Tabla 'alerts' aún no existe (${ELAPSED}s de ${MAX_WAIT_TABLES}s), reintentando..."
+            fi
+            
+            sleep 5
+            ELAPSED=$((ELAPSED + 5))
+          done
+          
+          if [ "$TABLE_FOUND" != "true" ]; then
+            echo "❌ Tabla 'alerts' no se creó después de ${MAX_WAIT_TABLES}s"
+            echo ""
+            echo "📊 Tablas existentes en alert_manager:"
+            docker exec docker-db-1 psql -U postgres -d alert_manager -c "\dt" 2>/dev/null || true
+            
+            echo ""
+            echo "📋 === LOGS DE LA APLICACIÓN FASTAPI ==="
+            docker logs alert_manager-web-1 2>/dev/null | tail -50 || echo "No se pudo obtener logs"
+            
+            echo ""
+            echo "📋 === LOGS DEL SCHEDULER DE AIRFLOW ==="
+            docker logs alert_manager-airflow-scheduler-1 2>/dev/null | tail -30 || echo "No se pudo obtener logs"
+            
+            exit 1
+          fi
+          
+          echo ""
+          echo "📊 Esquema de la tabla 'alerts':"
+          docker exec docker-db-1 psql -U postgres -d alert_manager -c "\d alerts" 2>/dev/null || true
+          
+          echo ""
+          echo "📍 === VERIFICANDO ALERTAS EN BASE DE DATOS ==="
+          
+          echo "🧹 Limpiando alertas previas (estado inicial)..."
+          docker exec docker-db-1 psql -U postgres -d alert_manager -c "DELETE FROM alerts;" 2>/dev/null || echo "⚠️ Tabla podría no existir aún"
+          
+          INITIAL_COUNT=$(docker exec docker-db-1 psql -U postgres -d alert_manager -t -c "SELECT COUNT(*) FROM alerts;" 2>/dev/null || echo "0")
+          echo "✅ Alertas iniciales: $INITIAL_COUNT"
+          
+          echo ""
+          echo "⏳ Esperando a que el DAG se ejecute automáticamente (máximo 900 segundos = 15 minutos)..."
+          echo "   (El DAG está configurado para ejecutarse cada 15 minutos con catchup=True)"
+          
+          ELAPSED=0
+          MAX_WAIT=900
+          INTERVAL=30
+          
+          while [ $ELAPSED -lt $MAX_WAIT ]; do
+            CURRENT_COUNT=$(docker exec docker-db-1 psql -U postgres -d alert_manager -t -c "SELECT COUNT(*) FROM alerts;" 2>/dev/null || echo "0")
+            CURRENT_COUNT=$(echo "$CURRENT_COUNT" | xargs)
+            
+            if [ "$CURRENT_COUNT" -gt 0 ] 2>/dev/null; then
+              echo "✅ ¡DAG ejecutado! Se encontraron $CURRENT_COUNT alertas después de ${ELAPSED}s"
+              
+              echo ""
+              echo "📊 Detalles de alertas:"
+              docker exec docker-db-1 psql -U postgres -d alert_manager -c "
+                SELECT COUNT(*) as total, level, type FROM alerts GROUP BY level, type ORDER BY total DESC LIMIT 10;
+              " 2>/dev/null || true
+              
+              echo ""
+              echo "🔍 Últimas 3 alertas:"
+              docker exec docker-db-1 psql -U postgres -d alert_manager -c "
+                SELECT id, title, level, type, region, timestamp FROM alerts ORDER BY timestamp DESC LIMIT 3;
+              " 2>/dev/null || true
+              
+              exit 0
+            fi
+            
+            echo "   [${ELAPSED}s] Alertas: $CURRENT_COUNT - Esperando ejecución del scheduler..."
+            
+            # Mostrar estado del scheduler cada minuto
+            if [ $((ELAPSED % 60)) -eq 0 ] && [ $ELAPSED -gt 0 ]; then
+              SCHEDULER_STATUS=$(docker ps --filter "name=airflow-scheduler" --format "{{.Status}}" 2>/dev/null || echo "N/A")
+              echo "   📦 Scheduler: $SCHEDULER_STATUS"
+            fi
+            
+            sleep $INTERVAL
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+          
+          echo ""
+          echo "⚠️ DAG no se ejecutó en el tiempo esperado (${MAX_WAIT}s)"
+          echo ""
+          echo "📋 Estados de contenedores:"
+          docker ps --filter "name=airflow" --format "table {{.Names}}\t{{.Status}}" 2>/dev/null || true
+          
+          echo ""
+          echo "📋 Logs del scheduler (últimas 50 líneas):"
+          docker logs docker-airflow-scheduler-1 2>/dev/null | tail -50 || true
+          
+          echo ""
+          echo "💡 Si las alertas no se insertaron:"
+          echo "   1. Revisa logs del scheduler: docker logs docker-airflow-scheduler-1"
+          echo "   2. Accede a Airflow UI: http://localhost:8080"
+          echo "   3. Verifica si AEMET_API_KEY está configurada correctamente"
 
       - name: Stop cluster
         if: always()
         run: |
-          docker compose -f docker/docker-compose.yml down -v
+          cd docker && docker compose down -v
       
-      - name: Show Microservice Logs
+      - name: Show Microservice Logs on failure
         if: failure()
         run: |
-          docker compose -f docker/docker-compose.yml logs --tail=80
+          echo "📋 === LOGS DEL SCHEDULER ==="
+          cd docker && docker compose logs airflow-scheduler | tail -50 || true
+          
+          echo ""
+          echo "📋 === LOGS DE LA API ==="
+          cd docker && docker compose logs airflow-webserver | tail -50 || true
+          
+          echo ""
+          echo "📋 === LOGS DE POSTGRES ==="
+          cd docker && docker compose logs postgres | tail -30 || true

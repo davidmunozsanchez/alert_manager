@@ -23,7 +23,8 @@ def client():
             self._json_data = json_data
             self.status_code = status_code
             self.headers = headers or {}
-            self.text = str(json_data)
+            # Para 204 No Content o None, text debe ser vacío
+            self.text = "" if json_data is None else str(json_data)
     
         def json(self):
             return self._json_data
@@ -196,8 +197,112 @@ def client():
             else:
                 return MockResponse({"detail": "Not Found"}, 404)
         
+        def put(self, url, json=None, **kwargs):
+            if url.startswith("/alerts/") and url != "/alerts/" and url != "/alerts/health" and url != "/alerts/expire/status" and url != "/alerts/expire/check" and url != "/alerts/statistics/summary":
+                # Extraer alert_id
+                try:
+                    alert_id = int(url.split("/")[-1])
+                except (ValueError, IndexError):
+                    return MockResponse({"detail": "Invalid alert ID"}, 400)
+                
+                if alert_id == 999:
+                    return MockResponse({"detail": "Alert not found"}, 404)
+                
+                if json:
+                    # Validar enum values si están presentes
+                    if "level" in json:
+                        valid_levels = ["info", "warning", "critical", "emergency"]
+                        if json["level"] not in valid_levels:
+                            return MockResponse({"detail": "Invalid level"}, 422)
+                    
+                    if "type" in json:
+                        valid_types = ["weather", "natural_disaster", "security", "health", "traffic", "infrastructure", "fire", "other"]
+                        if json["type"] not in valid_types:
+                            return MockResponse({"detail": "Invalid type"}, 422)
+                    
+                    # Return updated alert
+                    return MockResponse({
+                        "id": alert_id,
+                        "title": json.get("title", f"Alert {alert_id}"),
+                        "description": json.get("description", "Updated description"),
+                        "level": json.get("level", "info"),
+                        "type": json.get("type", "other"),
+                        "region": json.get("region", "Test Region"),
+                        "status": json.get("status", "active"),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "expires_at": json.get("expires_at", (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat())
+                    }, 200)
+                
+                return MockResponse({"detail": "No data provided"}, 422)
+            
+            return MockResponse({"detail": "Not Found"}, 404)
+        
+        def patch(self, url, json=None, **kwargs):
+            if url.startswith("/alerts/") and url != "/alerts/" and url != "/alerts/health" and url != "/alerts/expire/status" and url != "/alerts/expire/check" and url != "/alerts/statistics/summary":
+                # Extraer alert_id
+                try:
+                    alert_id = int(url.split("/")[-1])
+                except (ValueError, IndexError):
+                    return MockResponse({"detail": "Invalid alert ID"}, 400)
+                
+                if alert_id == 999:
+                    return MockResponse({"detail": "Alert not found"}, 404)
+                
+                if json:
+                    # Validar enum values si están presentes
+                    if "level" in json:
+                        valid_levels = ["info", "warning", "critical", "emergency"]
+                        if json["level"] not in valid_levels:
+                            return MockResponse({"detail": "Invalid level"}, 422)
+                    
+                    if "type" in json:
+                        valid_types = ["weather", "natural_disaster", "security", "health", "traffic", "infrastructure", "fire", "other"]
+                        if json["type"] not in valid_types:
+                            return MockResponse({"detail": "Invalid type"}, 422)
+                    
+                    # Return partially updated alert
+                    return MockResponse({
+                        "id": alert_id,
+                        "title": json.get("title", f"Alert {alert_id}"),
+                        "description": json.get("description", "Partial update description"),
+                        "level": json.get("level", "info"),
+                        "type": json.get("type", "other"),
+                        "region": json.get("region", "Test Region"),
+                        "status": json.get("status", "active"),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "expires_at": json.get("expires_at", (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat())
+                    }, 200)
+                
+                # PATCH con datos vacíos es válido (no actualiza nada)
+                return MockResponse({
+                    "id": alert_id,
+                    "title": f"Alert {alert_id}",
+                    "description": "No updates",
+                    "level": "info",
+                    "type": "other",
+                    "region": "Test Region",
+                    "status": "active",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+                }, 200)
+            
+            return MockResponse({"detail": "Not Found"}, 404)
+        
         def delete(self, url, **kwargs):
-            # DELETE no está implementado para ningún endpoint
+            if url.startswith("/alerts/") and url != "/alerts/" and url != "/alerts/health" and url != "/alerts/expire/status" and url != "/alerts/expire/check" and url != "/alerts/statistics/summary":
+                # Extraer alert_id
+                try:
+                    alert_id = int(url.split("/")[-1])
+                except (ValueError, IndexError):
+                    return MockResponse({"detail": "Invalid alert ID"}, 400)
+                
+                if alert_id == 999:
+                    return MockResponse({"detail": "Alert not found"}, 404)
+                
+                # 204 No Content - no devolvemos contenido
+                return MockResponse(None, 204)
+            
+            # DELETE no está implementado para otros endpoints
             return MockResponse({"detail": "Method Not Allowed"}, 405)
     
     return MockClient()
@@ -408,6 +513,129 @@ class TestDebugEndpoints:
         data = response.json()
         assert "alert_types" in data
 
+class TestCRUDUpdateEndpoints:
+    """Tests para endpoints de actualización (PUT y PATCH)"""
+    
+    def test_put_full_update_alert(self, client):
+        """Test actualización completa de alerta con PUT"""
+        update_data = {
+            "title": "Updated Alert Title",
+            "description": "Updated description",
+            "level": "critical",
+            "type": "weather",
+            "region": "Updated Region",
+            "status": "resolved",
+            "expires_at": (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
+        }
+        
+        response = client.put("/alerts/1", json=update_data)
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["id"] == 1
+        assert data["title"] == "Updated Alert Title"
+        assert data["level"] == "critical"
+        assert data["status"] == "resolved"
+    
+    def test_put_update_alert_not_found(self, client):
+        """Test PUT a alerta inexistente"""
+        update_data = {
+            "title": "Non-existent Alert",
+            "description": "This alert does not exist"
+        }
+        
+        response = client.put("/alerts/999", json=update_data)
+        
+        assert response.status_code == 404
+    
+    def test_put_update_invalid_level(self, client):
+        """Test PUT con level inválido"""
+        update_data = {
+            "level": "invalid_level"
+        }
+        
+        response = client.put("/alerts/1", json=update_data)
+        
+        assert response.status_code == 422
+    
+    def test_patch_partial_update_alert(self, client):
+        """Test actualización parcial de alerta con PATCH"""
+        update_data = {
+            "title": "Patched Title"
+        }
+        
+        response = client.patch("/alerts/1", json=update_data)
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["id"] == 1
+        assert data["title"] == "Patched Title"
+    
+    def test_patch_update_only_level(self, client):
+        """Test PATCH para actualizar solo el nivel"""
+        update_data = {
+            "level": "emergency"
+        }
+        
+        response = client.patch("/alerts/1", json=update_data)
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["level"] == "emergency"
+    
+    def test_patch_update_alert_not_found(self, client):
+        """Test PATCH a alerta inexistente"""
+        update_data = {
+            "status": "resolved"
+        }
+        
+        response = client.patch("/alerts/999", json=update_data)
+        
+        assert response.status_code == 404
+    
+    def test_patch_invalid_type(self, client):
+        """Test PATCH con type inválido"""
+        update_data = {
+            "type": "invalid_type"
+        }
+        
+        response = client.patch("/alerts/1", json=update_data)
+        
+        assert response.status_code == 422
+    
+    def test_patch_empty_update(self, client):
+        """Test PATCH con datos vacíos (válido, no actualiza nada)"""
+        update_data = {}
+        
+        response = client.patch("/alerts/1", json=update_data)
+        
+        assert response.status_code == 200
+
+class TestCRUDDeleteEndpoints:
+    """Tests para endpoint de eliminación (DELETE)"""
+    
+    def test_delete_alert_successful(self, client):
+        """Test eliminación exitosa de alerta"""
+        response = client.delete("/alerts/1")
+        
+        assert response.status_code == 204
+        # 204 No Content no devuelve contenido
+        assert response.text == "" or response.text is None
+    
+    def test_delete_alert_not_found(self, client):
+        """Test DELETE a alerta inexistente"""
+        response = client.delete("/alerts/999")
+        
+        assert response.status_code == 404
+    
+    def test_delete_multiple_alerts_sequential(self, client):
+        """Test eliminación secuencial de múltiples alertas"""
+        alert_ids = [1, 2, 3, 4, 5]
+        
+        for alert_id in alert_ids:
+            response = client.delete(f"/alerts/{alert_id}")
+            assert response.status_code == 204, f"Alert {alert_id} should be deleted"
+
 class TestErrorHandling:
     """Tests para manejo de errores"""
     
@@ -490,6 +718,10 @@ class TestBasicConnectivity:
             ("/", "GET"),
             ("/alerts/health", "GET"),
             ("/alerts/", "GET"),
+            ("/alerts/1", "GET"),
+            ("/alerts/1", "PUT"),
+            ("/alerts/1", "PATCH"),
+            ("/alerts/1", "DELETE"),
             ("/alerts/debug/simple", "GET"),
             ("/alerts/debug/count", "GET"),
             ("/alerts/debug/raw", "GET"),
@@ -504,13 +736,22 @@ class TestBasicConnectivity:
                 if method == "GET":
                     response = client.get(endpoint)
                 elif method == "POST":
-                    response = client.post(endpoint)
+                    response = client.post(endpoint, json={})
+                elif method == "PUT":
+                    response = client.put(endpoint, json={"title": "Test"})
+                elif method == "PATCH":
+                    response = client.patch(endpoint, json={"title": "Test"})
+                elif method == "DELETE":
+                    response = client.delete(endpoint)
                     
-                if response.status_code != 200:
+                # 204 No Content es válido para DELETE
+                if method == "DELETE" and response.status_code == 204:
+                    print(f"✅ Endpoint {method} {endpoint} working (204 No Content)")
+                elif response.status_code == 200:
+                    print(f"✅ Endpoint {method} {endpoint} working")
+                else:
                     all_working = False
                     print(f"❌ Endpoint {method} {endpoint} failed: {response.status_code}")
-                else:
-                    print(f"✅ Endpoint {method} {endpoint} working")
             except Exception as e:
                 all_working = False
                 print(f"❌ Endpoint {method} {endpoint} error: {e}")

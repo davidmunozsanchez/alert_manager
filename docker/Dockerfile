@@ -17,8 +17,13 @@ RUN pip install --no-cache-dir poetry==1.7.1
 # Configurar Poetry para no crear virtualenv
 RUN poetry config virtualenvs.create false
 
+
 # Instalar dependencias del proyecto
 RUN poetry install --no-interaction --no-ansi --no-root
+
+# Instalar navegadores de Playwright
+RUN python -m playwright install --with-deps
+
 
 # Copiar código fuente
 COPY src/ ./src/

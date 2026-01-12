@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: alert-manager
+  labels:
+    app.kubernetes.io/name: alert-manager
+    app.kubernetes.io/part-of: alert-manager-system

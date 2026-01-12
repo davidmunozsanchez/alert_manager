@@ -1,0 +1,76 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: alert-manager
+
+# Recursos base
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - airflow/airflow-dags-configmap.yaml
+  # NO incluir secrets.yaml - se crean via GitHub Actions
+  
+  # PostgreSQL (DB principal)
+  - postgres/pvc.yaml
+  - postgres/deployment.yaml
+  - postgres/service.yaml
+  
+  # API FastAPI
+  - api/deployment.yaml
+  - api/service.yaml
+  - api/ingress.yaml
+  
+  # Airflow
+  - airflow/airflow-db.yaml
+  - airflow/webserver.yaml
+  - airflow/scheduler.yaml
+  - airflow/service.yaml
+  
+  # Observabilidad
+  - observability/seq.yaml
+  - observability/prometheus.yaml
+  - observability/node-exporter.yaml
+  # - observability/dozzle.yaml
+  # - observability/filebrowser.yaml
+  # - observability/log-tester.yaml
+
+# Labels comunes para todos los recursos
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  # NO incluir secrets.yaml - se crean via GitHub Actions
+  
+  # PostgreSQL (DB principal)
+  - postgres/pvc.yaml
+  - postgres/deployment.yaml
+  - postgres/service.yaml
+  
+  # API FastAPI
+  - api/deployment.yaml
+  - api/service.yaml
+  - api/ingress.yaml
+  
+  # Airflow
+  - airflow/airflow-db.yaml
+  - airflow/webserver.yaml
+  - airflow/scheduler.yaml
+  - airflow/service.yaml
+  
+  # Observabilidad
+  - observability/seq.yaml
+  - observability/prometheus.yaml
+  - observability/node-exporter.yaml
+  # - observability/dozzle.yaml
+  # - observability/filebrowser.yaml
+  # - observability/log-tester.yaml
+
+# Labels comunes para todos los recursos
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: alert-manager
+      app.kubernetes.io/managed-by: kustomize
+
+# Configuración de imágenes
+images:
+  - name: ghcr.io/davidmunozsanchez/alert_manager
+    newTag: latest

@@ -3,7 +3,7 @@ import time
 
 import psycopg2
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@db:5432/alerts")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@db:5432/alert_manager")
 
 
 def wait_for_postgres(max_retries=10, delay=2):

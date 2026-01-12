@@ -112,38 +112,62 @@ def test_dag_task_retries(dagbag):
                 assert retries >= 0, f"Task {task.task_id} in DAG {dag_id} has negative retries"
 
 
-# # Tests específicos para data_ingesting.py
-# @pytest.mark.parametrize("dag_id", ["data_ingesting"])
-# def test_data_ingesting_dag(dagbag, dag_id):
-#     """Test specific structure of data_ingesting DAG"""
-#     if dag_id not in dagbag.dags:
-#         pytest.skip(f"DAG {dag_id} not found")
+# Tests específicos para aemet_alerts_ingestion.py
+@pytest.mark.parametrize("dag_id", ["aemet_alerts_ingestion"])
+def test_aemet_alerts_ingestion_dag(dagbag, dag_id):
+    """Test specific structure of aemet_alerts_ingestion DAG"""
+    if dag_id not in dagbag.dags:
+        pytest.skip(f"DAG {dag_id} not found")
 
-#     dag = dagbag.dags[dag_id]
+    dag = dagbag.dags[dag_id]
 
-#     # Verificar que tiene las tareas esperadas
-#     task_ids = [task.task_id for task in dag.tasks]
-#     print(f"\n[DEBUG] {dag_id} tasks: {task_ids}")
+    # Verificar que tiene las tareas esperadas
+    task_ids = [task.task_id for task in dag.tasks]
+    print(f"\n[DEBUG] {dag_id} tasks: {task_ids}")
 
-#     # Verificar estructura básica
-#     assert dag.owner is not None, f"DAG {dag_id} should have an owner"
+    # Verificar que tiene las tareas requeridas
+    assert "fetch_aemet_alerts" in task_ids, f"DAG {dag_id} debe tener la tarea 'fetch_aemet_alerts'"
+    assert "validate_and_insert" in task_ids, f"DAG {dag_id} debe tener la tarea 'validate_and_insert'"
+
+    # Verificar estructura básica
+    assert dag.owner is not None, f"DAG {dag_id} should have an owner"
+    assert len(dag.tasks) == 2, f"DAG {dag_id} debe tener exactamente 2 tareas"
+
+    # Verificar las dependencias
+    fetch_task = dag.get_task("fetch_aemet_alerts")
+    validate_task = dag.get_task("validate_and_insert")
+    
+    assert validate_task in fetch_task.downstream_list, "validate_and_insert debe depender de fetch_aemet_alerts"
 
 
-# # Tests específicos para data_checking.py
-# @pytest.mark.parametrize("dag_id", ["data_checking"])
-# def test_data_checking_dag(dagbag, dag_id):
-#     """Test specific structure of data_checking DAG"""
-#     if dag_id not in dagbag.dags:
-#         pytest.skip(f"DAG {dag_id} not found")
+@pytest.mark.parametrize("dag_id", ["aemet_alerts_ingestion"])
+def test_aemet_alerts_ingestion_schedule(dagbag, dag_id):
+    """Test scheduling configuration of aemet_alerts_ingestion DAG"""
+    if dag_id not in dagbag.dags:
+        pytest.skip(f"DAG {dag_id} not found")
 
-#     dag = dagbag.dags[dag_id]
+    dag = dagbag.dags[dag_id]
 
-#     # Verificar que tiene las tareas esperadas
-#     task_ids = [task.task_id for task in dag.tasks]
-#     print(f"\n[DEBUG] {dag_id} tasks: {task_ids}")
+    # Verificar que está configurado para ejecutarse cada 15 minutos
+    print(f"\n[DEBUG] {dag_id} schedule_interval: {dag.schedule_interval}")
+    assert dag.schedule_interval is not None, f"DAG {dag_id} debe tener un schedule_interval"
+    assert str(dag.schedule_interval) == "*/15 * * * *", "El DAG debe ejecutarse cada 15 minutos"
 
-#     # Verificar estructura básica
-#     assert dag.owner is not None, f"DAG {dag_id} should have an owner"
+
+@pytest.mark.parametrize("dag_id", ["aemet_alerts_ingestion"])
+def test_aemet_alerts_ingestion_tags(dagbag, dag_id):
+    """Test tags of aemet_alerts_ingestion DAG"""
+    if dag_id not in dagbag.dags:
+        pytest.skip(f"DAG {dag_id} not found")
+
+    dag = dagbag.dags[dag_id]
+
+    # Verificar tags
+    expected_tags = ["aemet", "alerts", "ingestion", "opendata"]
+    print(f"\n[DEBUG] {dag_id} tags: {dag.tags}")
+    
+    for tag in expected_tags:
+        assert tag in dag.tags, f"DAG {dag_id} debe tener el tag '{tag}'"
 
 
 def test_dag_tasks_have_operators(dagbag):
@@ -238,3 +262,28 @@ def test_dag_documentation(dagbag):
             if hasattr(task, "doc") or hasattr(task, "doc_md"):
                 if task.doc or (hasattr(task, "doc_md") and task.doc_md):
                     print(f"[DEBUG] Task {task.task_id} has documentation")
+
+
+def test_aemet_alerts_ingestion_uses_secrets():
+    """Test that aemet_alerts_ingestion can access required secrets"""
+    import os
+    from airflow.models import Variable
+
+    secret_name = "AEMET_API_KEY"
+
+    # Intentar obtener del ambiente
+    env_value = os.getenv(secret_name)
+
+    # Intentar obtener de Airflow Variable
+    airflow_value = None
+    try:
+        airflow_value = Variable.get(secret_name, default=None)
+    except Exception as e:
+        print(f"⚠️  No se pudo acceder a Airflow Variable: {e}")
+
+    # Al menos una debe estar disponible
+    assert (
+        env_value or airflow_value
+    ), f"{secret_name} no está configurado en variables de entorno ni en Airflow Variables"
+
+    print(f"✅ {secret_name} accesible para aemet_alerts_ingestion DAG")

@@ -1,0 +1,273 @@
+name: Deploy to Kubernetes
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '*.md'
+      - 'doc/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  CLUSTER_NAME: cluster1-alert-manager
+  NAMESPACE: alert-manager
+  OCI_REGION: eu-frankfurt-1
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=
+            type=ref,event=branch
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'production' }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install OCI CLI
+        run: |
+          curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh | bash -s -- --accept-all-defaults
+          echo "$HOME/bin" >> $GITHUB_PATH
+
+      - name: Configure OCI CLI
+        run: |
+          mkdir -p ~/.oci
+          echo "${{ secrets.OCI_PRIVATE_KEY }}" > ~/.oci/oci_api_key.pem
+          echo "OCI_API_KEY" >> ~/.oci/oci_api_key.pem
+          chmod 600 ~/.oci/oci_api_key.pem
+          cat > ~/.oci/config << EOF
+          [DEFAULT]
+          user=${{ secrets.OCI_USER_OCID }}
+          fingerprint=${{ secrets.OCI_FINGERPRINT }}
+          tenancy=${{ secrets.OCI_TENANCY_OCID }}
+          region=${{ env.OCI_REGION }}
+          key_file=~/.oci/oci_api_key.pem
+          EOF
+          chmod 600 ~/.oci/config
+        env:
+          OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING: "True"
+          SUPPRESS_LABEL_WARNING: "True"
+
+      - name: Configure kubectl for OKE
+        env:
+          OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING: "True"
+        run: |
+          mkdir -p ~/.kube
+          oci ce cluster create-kubeconfig \
+            --cluster-id ${{ secrets.OKE_CLUSTER_OCID }} \
+            --file ~/.kube/config \
+            --region ${{ env.OCI_REGION }} \
+            --token-version 2.0.0 \
+            --kube-endpoint PUBLIC_ENDPOINT
+          export KUBECONFIG=~/.kube/config
+
+      - name: Verify kubectl connection
+        run: |
+          kubectl cluster-info
+          kubectl get nodes
+
+      - name: Clean previous deployment
+        run: |
+          echo "=== Cleaning previous deployment ==="
+          # Eliminar todos los recursos del namespace (excepto el namespace mismo)
+          kubectl delete deployments --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          kubectl delete pods --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          kubectl delete pvc --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          kubectl delete configmaps --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          kubectl delete secrets --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          kubectl delete services --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          kubectl delete ingress --all -n ${{ env.NAMESPACE }} --ignore-not-found=true
+          # Esperar a que los PVCs se eliminen completamente
+          echo "Waiting for PVCs to be deleted..."
+          sleep 30
+          echo "Cleanup complete!"
+
+      - name: Create namespace if not exists
+        run: |
+          kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Validate Secrets
+        id: validate-secrets
+        run: |
+          if [ -z "${{ secrets.POSTGRES_PASSWORD }}" ]; then
+            echo "::error file=.github/workflows/deploy-kubernetes.yml,line=107::POSTGRES_PASSWORD secret is not set."
+            exit 1
+          fi
+          if [ -z "${{ secrets.AIRFLOW_DB_PASSWORD }}" ]; then
+            echo "::error file=.github/workflows/deploy-kubernetes.yml,line=111::AIRFLOW_DB_PASSWORD secret is not set."
+            exit 1
+          fi
+          echo "Secrets are valid."
+
+      - name: Create/Update Secrets
+        run: |
+          kubectl create secret generic alert-manager-secrets \
+            --namespace ${{ env.NAMESPACE }} \
+            --from-literal=POSTGRES_PASSWORD='${{ secrets.POSTGRES_PASSWORD }}' \
+            --from-literal=AIRFLOW_DB_PASSWORD='${{ secrets.AIRFLOW_DB_PASSWORD }}' \
+            --from-literal=AIRFLOW_ADMIN_PASSWORD='${{ secrets.AIRFLOW_ADMIN_PASSWORD }}' \
+            --from-literal=AEMET_API_KEY='${{ secrets.AEMET_API_KEY }}' \
+            --from-literal=FIREBASE_CREDENTIALS='${{ secrets.FIREBASE_CREDENTIALS }}' \
+            --from-literal=AIRFLOW__CORE__FERNET_KEY='${{ secrets.AIRFLOW_FERNET_KEY }}' \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Create/Update Registry Secret
+        run: |
+          kubectl create secret docker-registry ghcr-credentials \
+            --namespace ${{ env.NAMESPACE }} \
+            --docker-server=${{ env.REGISTRY }} \
+            --docker-username=davidmunozsanchez \
+            --docker-password='${{ secrets.GHCR_TOKEN }}' \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Create/Update DAGs ConfigMap
+        run: |
+          kubectl create configmap airflow-dags \
+            --namespace ${{ env.NAMESPACE }} \
+            --from-file=aemet_alerts_ingestion.py=src/dags/aemet_alerts_ingestion.py \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Setup Kustomize
+        uses: imranismail/setup-kustomize@v2
+
+      - name: Update image tag in Kustomize
+        run: |
+          cd k8s
+          kustomize edit set image ghcr.io/davidmunozsanchez/alert_manager=ghcr.io/davidmunozsanchez/alert_manager:latest
+
+      - name: Deploy with Kustomize
+        run: |
+          kubectl apply -k k8s/
+
+      - name: Wait for deployments
+        run: |
+          echo "=== Waiting for postgres ==="
+          kubectl rollout status deployment/postgres -n ${{ env.NAMESPACE }} --timeout=300s || {
+            echo "=== Postgres failed, checking status ==="
+            kubectl get pods -n ${{ env.NAMESPACE }} -l app=postgres
+            kubectl describe pod -n ${{ env.NAMESPACE }} -l app=postgres
+            kubectl logs -n ${{ env.NAMESPACE }} -l app=postgres --tail=50 || true
+            exit 1
+          }
+          
+          echo "=== Waiting for API ==="
+          kubectl rollout status deployment/alert-manager-api -n ${{ env.NAMESPACE }} --timeout=300s || {
+            echo "=== API failed, checking status ==="
+            kubectl describe pod -n ${{ env.NAMESPACE }} -l app=alert-manager-api
+            kubectl logs -n ${{ env.NAMESPACE }} -l app=alert-manager-api --tail=50 || true
+            exit 1
+          }
+          
+          echo "=== Waiting for Airflow ==="
+          kubectl rollout status deployment/airflow-webserver -n ${{ env.NAMESPACE }} --timeout=300s || true
+          kubectl rollout status deployment/airflow-scheduler -n ${{ env.NAMESPACE }} --timeout=300s || true
+          kubectl rollout status deployment/seq -n ${{ env.NAMESPACE }} --timeout=300s || true
+
+      - name: Print Airflow Webserver logs
+        run: |
+          echo "=== Airflow Webserver Logs ==="
+          kubectl logs -n ${{ env.NAMESPACE }} -l app=airflow-webserver --tail=100 || true
+
+      - name: Get deployment status
+        run: |
+          echo "=== Pods Status ==="
+          kubectl get pods -n ${{ env.NAMESPACE }}
+          echo ""
+          echo "=== Services ==="
+          kubectl get services -n ${{ env.NAMESPACE }}
+          echo ""
+          echo "=== Ingress ==="
+          kubectl get ingress -n ${{ env.NAMESPACE }}
+
+      - name: Health check
+        run: |
+          # Obtener IP del LoadBalancer de la API
+          API_IP=$(kubectl get svc alert-manager-api -n ${{ env.NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+
+          if [ -n "$API_IP" ]; then
+            echo "API LoadBalancer IP: $API_IP"
+
+            # Esperar a que el endpoint /alerts/ responda con 200
+            for i in {1..30}; do
+              STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://$API_IP/alerts/")
+              if [ "$STATUS" -eq 200 ]; then
+                echo "✅ API /alerts/ health check passed!"
+                exit 0
+              fi
+              echo "Waiting for /alerts/ endpoint to be ready... ($i/30)"
+              sleep 10
+            done
+
+            echo "⚠️ Health check timeout, but deployment completed"
+          else
+            echo "LoadBalancer IP not yet assigned"
+          fi
+
+  notify:
+    needs: [build-and-push, deploy]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Deployment Summary
+        run: |
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image**: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Digest**: ${{ needs.build-and-push.outputs.image-digest }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Cluster**: ${{ env.CLUSTER_NAME }} (Oracle OKE)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Region**: ${{ env.OCI_REGION }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Namespace**: ${{ env.NAMESPACE }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ${{ needs.deploy.result }}" >> $GITHUB_STEP_SUMMARY
+          
