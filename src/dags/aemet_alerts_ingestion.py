@@ -301,14 +301,20 @@ def validate_and_insert_aemet_alerts() -> None:
         conn = None
         max_retries = 10
         retry_delay = 5
+        # Leer parámetros de conexión de entorno
+        pg_db = os.getenv("POSTGRES_DB", "alert_manager")
+        pg_user = os.getenv("POSTGRES_USER", "postgres")
+        pg_password = os.getenv("POSTGRES_PASSWORD", "postgres")
+        pg_host = os.getenv("POSTGRES_HOST", "postgres")
+        pg_port = int(os.getenv("POSTGRES_PORT", "5432"))
         for attempt in range(max_retries):
             try:
                 conn = psycopg2.connect(
-                    dbname="alert_manager",
-                    user="postgres",
-                    password="postgres",
-                    host="db",
-                    port=5432
+                    dbname=pg_db,
+                    user=pg_user,
+                    password=pg_password,
+                    host=pg_host,
+                    port=pg_port
                 )
                 print(f"✅ Conexión a PostgreSQL establecida en intento {attempt + 1}")
                 context['ti'].xcom_push(key='validate_pg_connect', value=True)
@@ -342,11 +348,11 @@ def validate_and_insert_aemet_alerts() -> None:
             for attempt in range(3):
                 try:
                     conn = psycopg2.connect(
-                        dbname="alert_manager",
-                        user="postgres",
-                        password="postgres",
-                        host="db",
-                        port=5432
+                        dbname=pg_db,
+                        user=pg_user,
+                        password=pg_password,
+                        host=pg_host,
+                        port=pg_port
                     )
                     cur = conn.cursor()
                     cur.execute("""
