@@ -2,7 +2,7 @@
 
 ## El endpoint funciona con autenticación
 
-Cuando usas la API key del JWT, el endpoint retorna una estructura con URLs para descargar los datos:
+Cuando se usa la API key del JWT, el endpoint retorna una estructura con URLs para descargar los datos:
 
 ```json
 {
@@ -15,82 +15,6 @@ Cuando usas la API key del JWT, el endpoint retorna una estructura con URLs para
 
 El archivo `datos` es un **TAR sin compresión** que contiene cientos de archivos XML en formato **CAP** (Common Alerting Protocol).
 
----
-
-## Paso 1: Agregar la API Key a GitHub Secrets
-
-⚠️ **Para instrucciones detalladas sobre GitHub Secrets**, ver [GITHUB_SECRETS_SETUP.md](GITHUB_SECRETS_SETUP.md)
-
-### Resumen rápido:
-
-1. Ve a tu repositorio en GitHub: `https://github.com/tu-usuario/alert_manager`
-2. **Settings** → **Secrets and variables** → **Actions**
-3. **New repository secret**
-   - **Name**: `AEMET_API_KEY`
-   - **Value**: Tu API key JWT
-4. **Add secret**
-
-## Paso 2: Usar el Secret en Airflow (Docker)
-
-### Para desarrollo local:
-
-```bash
-export AEMET_API_KEY="tu_api_key_aqui"
-cd docker/
-docker-compose up
-```
-
-O sin exportar:
-
-```bash
-cd docker/
-AEMET_API_KEY="tu_api_key_aqui" docker-compose up
-```
-
-### En CI/CD (GitHub Actions):
-
-Ver [GITHUB_SECRETS_SETUP.md](GITHUB_SECRETS_SETUP.md) para instrucciones completas.
-
-### En Airflow UI (Recomendado para producción):
-
-1. Abre la UI de Airflow: `http://localhost:8080`
-2. Ve a **Admin** → **Variables**
-3. Haz clic en **+**
-4. **Key**: `AEMET_API_KEY`
-5. **Value**: Tu API key
-6. **Save**
-
----
-
-## Cómo acceden los DAGs a la variable
-
-Los DAGs automáticamente buscan la variable en este orden:
-
-1. **Airflow Variables** (`Variable.get("AEMET_API_KEY")`) - ✅ Más seguro
-2. **Variables de entorno** (`os.getenv("AEMET_API_KEY")`) - Fallback
-
-### En código:
-
-```python
-from airflow.models import Variable
-
-api_key = Variable.get("AEMET_API_KEY", default=None)
-if not api_key:
-    raise RuntimeError("AEMET_API_KEY no configurada")
-```
-
----
-
-## Estado actual
-
-El archivo `docker-compose.yml` ha sido actualizado para pasar `AEMET_API_KEY` a:
-- ✅ `airflow-init`
-- ✅ `airflow-webserver`
-- ✅ `airflow-scheduler`
-
-Esto permite que los DAGs accedan a la variable automáticamente.
-
----
 
 ## Información sobre el DAG creado
 
@@ -172,34 +96,3 @@ Cada XML contiene una alerta individual en formato CAP 1.2 con:
 - Área geográfica (polígono)
 - Fechas de efectividad y expiración
 - Parámetros específicos de AEMET
-
----
-
-## Nota importante
-
-⚠️ **El DAG está completamente funcional**. El flujo es:
-
-1. ✅ Se autentica con la API key
-2. ✅ Obtiene el TAR comprimido (~4MB)
-3. ✅ Extrae y procesa 300+ archivos XML
-4. ✅ Normaliza los datos a JSON
-5. ✅ Valida e inserta en PostgreSQL
-
-**No hay datos de demostración necesarios** - el DAG funciona con datos reales de AEMET cuando se ejecuta.
-
----
-
-## Troubleshooting
-
-### "AEMET_API_KEY no encontrada"
-- Verifica que esté en GitHub Secrets
-- Asegúrate de que esté también en la variable de entorno de Docker
-- En la UI de Airflow, ve a Admin → Variables y verifica que exista
-
-### "Conexión rechazada a PostgreSQL"
-- Verifica que el contenedor `db` está corriendo: `docker ps`
-- Revisa los logs: `docker-compose logs db`
-
-### "El DAG no aparece en Airflow"
-- Reinicia Airflow: `docker-compose restart webserver scheduler`
-- Verifica que el archivo está en `docker/dags/` (se monta en Docker)

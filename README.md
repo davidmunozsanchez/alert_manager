@@ -18,10 +18,10 @@ Toda la información técnica y el desarrollo del proyecto se encuentran documen
 - [Hito 3: Diseño de microservicios](./doc/hito3.md)
 
 - [Hito 4: Composición de servicios](./doc/hito4.md)
+  
+- [Hito 5: Despliegue de la app en un PaaS](./doc/hito5.md)
 
-Consideraciones hito4: se han creado nuevos Workflows para crear una imagen del contenedor web de Docker y probarla. La documentación sobre los contenedores se ha amplidado. Para la próxima entrega, se implementará un DAG en Airflow para llamar a la API de la AEMET y rellenar la base de datos. Además, se piensa aplicar scrapping a alguna web que no tenga una API pública.
-
-> A medida que avance el desarrollo, se irán añadiendo nuevos hitos y documentación adicional.
+**Consideraciones hito5:** se han eliminado algunos contenedores que no se veían necesarios de los hitos previos, como filebrowser, y se han añadido otros como Prometheus. Están comentadas algunas mejoras futuras también. Además, uno de los test de los Dags falla en GitHub porque se ha añadido el DAG no terminado para ingestar datos de la DGT, el que funciona es el de la AEMET.
 
 ---
 
@@ -32,7 +32,6 @@ Puedes seguir el progreso del desarrollo, reportar errores o proponer mejoras de
 - [Issues](https://github.com/davidmunozsanchez/alert_manager/issues): seguimiento de errores y tareas pendientes.
 - [Milestones](https://github.com/davidmunozsanchez/alert_manager/milestones): planificación y avances por etapas.
 
-Se han tenido en cuenta esta vez dos Milestones. Uno para la configuración inicial y otro para la introducción de tests. Algunas issues no se han cerrado porque o bien no se ha avanzado o bien se quiere añadir más funcionalidad futura.
 
 ---
 
