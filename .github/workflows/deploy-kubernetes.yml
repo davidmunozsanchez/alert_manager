@@ -235,20 +235,21 @@ jobs:
         run: |
           # Obtener IP del LoadBalancer de la API
           API_IP=$(kubectl get svc alert-manager-api -n ${{ env.NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-          
+
           if [ -n "$API_IP" ]; then
             echo "API LoadBalancer IP: $API_IP"
-            
-            # Esperar a que el endpoint responda
+
+            # Esperar a que el endpoint /alerts/ responda con 200
             for i in {1..30}; do
-              if curl -sf "http://$API_IP:8000/health" > /dev/null 2>&1; then
-                echo "✅ API health check passed!"
+              STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://$API_IP:8000/alerts/")
+              if [ "$STATUS" -eq 200 ]; then
+                echo "✅ API /alerts/ health check passed!"
                 exit 0
               fi
-              echo "Waiting for API to be ready... ($i/30)"
+              echo "Waiting for /alerts/ endpoint to be ready... ($i/30)"
               sleep 10
             done
-            
+
             echo "⚠️ Health check timeout, but deployment completed"
           else
             echo "LoadBalancer IP not yet assigned"

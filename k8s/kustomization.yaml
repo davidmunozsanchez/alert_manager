@@ -28,6 +28,8 @@ resources:
   
   # Observabilidad
   - observability/seq.yaml
+  - observability/prometheus.yaml
+  - observability/node-exporter.yaml
   # - observability/dozzle.yaml
   # - observability/filebrowser.yaml
   # - observability/log-tester.yaml
@@ -56,6 +58,8 @@ resources:
   
   # Observabilidad
   - observability/seq.yaml
+  - observability/prometheus.yaml
+  - observability/node-exporter.yaml
   # - observability/dozzle.yaml
   # - observability/filebrowser.yaml
   # - observability/log-tester.yaml
