@@ -1,15 +1,14 @@
-# Despliegue, Observabilidad y Pruebas en la Nube – Alert Manager
-Captura con todas las IPs públicas para probar:
+# Despliegue, observabilidad y pruebas en la nube – Alert Manager
 
-## 1. Elección del IaaS/PaaS y Justificación
+## 1. Elección del IaaS/PaaS y justificación
 
-Se ha seleccionado **Oracle Cloud Infrastructure (OCI) - Oracle Kubernetes Engine (OKE)** en la región `eu-frankfurt-1` (Europa) para el despliegue de la aplicación. 
+Se ha seleccionado **Oracle Cloud Infrastructure (OCI) - Oracle Kubernetes Engine (OKE)** en la región `eu-frankfurt-1` (Europa) para el despliegue de la aplicación. OKE es un servicio de Kubernetes gestionado, por lo que se clasifica como PaaS (Platform as a Service) sobre la capa IaaS de OCI, ofreciendo gestión de clústeres, actualizaciones y escalado sin gestionar directamente la infraestructura subyacente.
 
 ### Razones de la elección:
-- **Always Free Tier**: Permite ejecutar un clúster Kubernetes real, con 4 OCPU y 24GB RAM ARM, almacenamiento y balanceador de carga sin coste.
-- **Despliegue en Europa**: Cumple requisitos legales de protección de datos.
-- **Recursos suficientes**: El clúster soporta múltiples pods (API, Airflow, PostgreSQL, observabilidad) y pruebas de carga razonables para el alcance académico.
-- **Automatización y reproducibilidad**: Toda la infraestructura se define en YAMLs y scripts versionados, permitiendo reproducir el entorno desde cero.
+- **Always Free Tier**: permite ejecutar un clúster Kubernetes real, con 4 OCPU y 24GB RAM ARM, almacenamiento y balanceador de carga sin coste.
+- **Despliegue en Europa**: cumple requisitos legales de protección de datos.
+- **Recursos suficientes**: el clúster soporta múltiples pods (API, Airflow, PostgreSQL, observabilidad) y pruebas de carga razonables para el alcance académico.
+- **Automatización y reproducibilidad**: toda la infraestructura se define en YAMLs y scripts versionados, permitiendo reproducir el entorno desde cero.
 
 ![alt text](./imgs/hito5/image-9.png)
 
@@ -17,33 +16,32 @@ Se ha seleccionado **Oracle Cloud Infrastructure (OCI) - Oracle Kubernetes Engin
 
 ---
 
-## 2. Herramientas y Proceso de Despliegue
+## 2. Herramientas y proceso de despliegue
 
-- **Repositorio GitHub**: Código fuente, Dockerfiles, manifiestos K8s y scripts CI/CD.
-- **GitHub Actions**: Automatiza build, push y despliegue en OKE tras cada push a main/hito5.
-- **Kubernetes YAMLs**: Definen deployments, servicios, ingress, configmaps y secrets.
+- **Repositorio GitHub**: código fuente, Dockerfiles, manifiestos K8s y scripts CI/CD.
+- **GitHub Actions**: automatiza build, push y despliegue en OKE tras cada push a main/hito5.
+- **Kubernetes YAMLs**: definen deployments, servicios, ingress, configmaps y secrets.
 - **OCI CLI y kubectl**: Scripts reproducibles para crear namespace, aplicar recursos y gestionar secretos.
-- **Despliegue reproducible**: Cualquier usuario autorizado puede levantar la infraestructura ejecutando los scripts y YAMLs proporcionados.
+- **Despliegue reproducible**: cualquier usuario autorizado puede levantar la infraestructura ejecutando los scripts y YAMLs proporcionados.
 
 ---
 
-## 3. Despliegue Automático desde GitHub
+## 3. Despliegue automático desde GitHub
 
 - El workflow `.github/workflows/deploy-kubernetes.yml` automatiza:
   - Build y push de imágenes Docker a GHCR.
   - Configuración de secrets y configmaps.
   - Aplicación de recursos K8s vía Kustomize.
   - Health check automático del API tras despliegue.
-- El README y los scripts documentan cómo reproducir el despliegue desde cero.
 
 ---
 
-## 4. Observabilidad y Monitorización
+## 4. Observabilidad y monitorización
 
-- **Prometheus**: Despliegue vía YAML, monitoriza métricas de nodos y pods.
-- **Node Exporter**: Métricas de CPU, RAM, disco y red de los nodos.
-- **Seq**: Centralización de logs de la aplicación.
-- **Airflow UI**: Monitorización de DAGs y tareas.
+- **Prometheus**: despliegue vía YAML, monitoriza métricas de nodos y pods.
+- **Node Exporter**: métricas de CPU, RAM, disco y red de los nodos.
+- **Seq**: centralización de logs de la aplicación.
+- **Airflow UI**: monitorización de DAGs y tareas.
 - **Pruebas de queries Prometheus**: (ver PROMETHEUS_QUERIES.md)
 
 > **Ejemplo de query para CPU:**
@@ -55,9 +53,10 @@ Se ha seleccionado **Oracle Cloud Infrastructure (OCI) - Oracle Kubernetes Engin
 
 ## 5. Pruebas y validación
 
-- **Pruebas funcionales**: API testada con curl (ver CURL_EXAMPLES.md).
+### Pruebas funcionales
+API testada con curl (ver CURL_EXAMPLES.md).
 
-### Pruebas de Estrés
+### Pruebas de estrés
 Se realizaron pruebas de carga usando herramientas como `ab` (Apache Benchmark) o `wrk` para simular múltiples peticiones concurrentes al endpoint principal de la API.
 
 _Ejemplo de comando:_
@@ -77,10 +76,10 @@ kubectl port-forward -n alert-manager svc/prometheus 9090:9090
 
 2. Abre tu navegador en [http://localhost:9090](http://localhost:9090)
 
-3. Usa las siguientes queries en la barra de búsqueda de Prometheus:
+3. Las Queries se meten en el apartado correspondiente de Prometheus.
 
 Lo siguiente, ha sido la ejecución del test:
-
+```
 da01m@davidpc:/mnt/c/Users/da01m/Documents/GitHub/alert_manager$ ab -n 1000 -c 50 http://141.147.25.0/alerts/
 This is ApacheBench, Version 2.3 <$Revision: 1903618 $>
 Copyright 1996 Adam Twiss, Zeus Technology Ltd, http://www.zeustech.net/
@@ -159,7 +158,7 @@ Percentage of the requests served within a certain time (ms)
   98%   2081
   99%   2183
  100%   3168 (longest request)
-
+```
 **Comentarios sobre los resultados:**
 
 - Se observa que de 1000 peticiones, 400 fallaron ("Failed requests: 400"), lo que indica problemas de capacidad o errores en la aplicación bajo alta concurrencia.
@@ -230,16 +229,15 @@ La edad de los servicios tumbados es mucho más baja como se puede observar, y y
 ![alt text](./imgs/hito5/image-5.png)
 
 Y también sigue devolviendo alertas.
+
 ---
 
 ### Pruebas de latencia
 Se midió la latencia de respuesta de la API en una única petición y con wrk.
 
-![Gráfica de latencia de la API](./imgs/hito5/pendiente_latencia.png)
-
 ### Comandos para pruebas de latencia
 
-Puedes medir la latencia de la API con ab, wrk o curl:
+Se puede medir la latencia de la API con ab, wrk o curl:
 
 ```sh
 
@@ -282,36 +280,36 @@ Captura de la UI de Airflow mostrando DAGs activos y ejecuciones:
 Como se puede observar, Airflow se ejecuta cada 15 minutos.
 
 A continuación, se muestra, a partir de una ejecución limpia, como se rellena automáticamente la base de datos.
-![alt text](image.png)
+![alt text](./imgs/hito5/image-second.png)
 
 No hay alertas.
 
 Si hacemos una ejecución manual del DAG:
-![alt text](image-1.png)
+![alt text](./imgs/hito5/image-third.png)
 
 Y volvemos a pedir las alertas:
-![alt text](image-2.png)
+![alt text](./imgs/hito5/image-fourth.png)
 
-De Prometheus y Seq se han mostrado varias capturas a lo largo del documento.
-
-- [ ] Incluir URL pública del despliegue en README
+De Prometheus y Seq se han mostrado varias capturas a lo largo del documento. Hay que tener en cuenta que Airflow tarda un poco en estar listo, por eso algunos DAGs salen fallados. Además, el cluster test puede fallar.
 
 ---
 
 ## 7. Enlaces y Documentación
 
 - [KUBERNETES.md](./hito5/KUBERNETES.md)
+  Este archivo describe la configuración, manifiestos y pasos necesarios para desplegar la infraestructura y los servicios de la aplicación en un clúster Kubernetes, incluyendo ejemplos de uso de kubectl y recomendaciones para la gestión de recursos en OKE.
 - [PROMETHEUS_QUERIES.md](./hito5/PROMETHEUS_QUERIES.md)
+  Este archivo recopila ejemplos de consultas (queries) para Prometheus, utilizadas en la monitorización y análisis de métricas del clúster y la aplicación. Incluye queries para CPU, memoria, uso de recursos y otros indicadores clave, facilitando la interpretación de los datos recogidos por Prometheus.
 - [CURL_EXAMPLES.md](./hito5/CURL_EXAMPLES.md)
+  Este archivo contiene ejemplos prácticos de comandos `curl` utilizados para probar los distintos endpoints de la API, incluyendo peticiones de ejemplo, parámetros y posibles respuestas. Es útil para validar el funcionamiento de la API y como referencia rápida para realizar pruebas manuales desde la línea de comandos.
  - [.github/workflows/deploy-kubernetes.yml](.github/workflows/deploy-kubernetes.yml)
    
    Este archivo es el workflow principal de CI/CD para el despliegue automático en Oracle Kubernetes Engine (OKE). Se encarga de construir las imágenes Docker, subirlas al registro (GHCR), aplicar los manifiestos de Kubernetes (deployments, services, configmaps, secrets) y realizar health checks tras el despliegue. El proceso se lanza automáticamente con cada push a la rama main/hito5, garantizando que la infraestructura y la aplicación estén siempre actualizadas y reproducibles. El workflow utiliza los scripts y credenciales configurados en el repositorio para interactuar con OCI y el clúster Kubernetes, permitiendo un despliegue desatendido y seguro.
 
-   Al final, se dejo solo para ejecutarse en el despliegue de Main.
+   Al final, se dejó solo para ejecutarse en el despliegue de Main.
 
 - [AEMET INFO](./hito5/AEMET_SETUP.md)
-
-- [QUICKSTAR GUIDE FOR LOCAL](./hito5/QUICKSTART.md)
+  Este archivo proporciona la información necesaria sobre la API de AEMET y cómo se usa.
 
 ---
 

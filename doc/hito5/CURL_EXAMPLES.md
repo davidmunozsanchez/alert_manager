@@ -1,7 +1,7 @@
 # Ejemplos de Curl para API de Alerts
 # Base URL: http://92.5.79.52
 
-Esta base URL hay que cambiarla por la indicada en el documento hito5.md.
+Esta base URL hay que cambiarla por la indicada en la entrega.
 
 ## ================================
 ## HEALTH CHECK
